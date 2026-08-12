@@ -117,6 +117,58 @@
       animation: pulse-mic 1s infinite alternate;
     }
 
+    button.record-btn {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: #fff;
+      font-size: 0.85rem;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 20px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    button.record-btn:hover {
+      background: linear-gradient(135deg, #f87171, #ef4444);
+      box-shadow: 0 0 12px rgba(239, 68, 68, 0.4);
+    }
+    button.record-btn.recording {
+      background: #991b1b;
+      border: 1px solid #f87171;
+      animation: pulse-mic 1.2s infinite alternate;
+    }
+
+    .recording-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #f87171;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+    }
+
+    .rec-dot {
+      width: 10px;
+      height: 10px;
+      background-color: #ef4444;
+      border-radius: 50%;
+      display: inline-block;
+      animation: blink-rec-dot 1s infinite alternate;
+    }
+
+    @keyframes blink-rec-dot {
+      from { opacity: 1; transform: scale(1); }
+      to { opacity: 0.2; transform: scale(0.8); }
+    }
+
     @keyframes pulse-mic {
       from { box-shadow: 0 0 5px rgba(244, 63, 94, 0.4); }
       to { box-shadow: 0 0 20px rgba(244, 63, 94, 0.8); }
@@ -176,13 +228,34 @@
     <div class="title">
       <span>👨‍🏫</span> Teacher Live Control Panel & Whiteboard
     </div>
-    <div id="ws-status" class="status-badge">📡 CONNECTING...</div>
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <div id="recording-indicator" class="recording-badge" style="display: none;">
+        <span class="rec-dot"></span> REC LIVE
+      </div>
+      <button id="record-toggle-btn" class="record-btn">
+        🔴 Start Recording
+      </button>
+      <div id="ws-status" class="status-badge">📡 CONNECTING...</div>
+    </div>
   </header>
 
   <div class="main-grid">
     <!-- Left Column: Interactive Whiteboard Canvas -->
     <div class="panel">
       <div class="canvas-toolbar">
+        <div class="tool-group">
+          <button id="tool-draw-btn" class="active" style="background:#38bdf8; color:#000;">✏️ Pen</button>
+          <button id="tool-pan-btn">🖐️ Pan Canvas</button>
+          <button id="reset-view-btn" title="Reset canvas view to origin (0,0)">🎯 Reset View</button>
+          
+          <button id="zoom-in-btn" title="Zoom In">➕</button>
+          <button id="zoom-out-btn" title="Zoom Out">➖</button>
+          <button id="zoom-reset-btn" title="Reset Zoom to 100%">🔍 100%</button>
+          
+          <span id="zoom-badge" style="font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:#38bdf8; font-weight:600;">100%</span>
+          <span id="pan-coords-badge" style="font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:#94a3b8; margin-left:4px;">Pan: (0, 0)</span>
+        </div>
+
         <div class="tool-group">
           <label>Pen Color:</label>
           <input type="color" id="color-picker" value="#38bdf8">
@@ -193,9 +266,7 @@
             <option value="4" selected>Medium (4px)</option>
             <option value="8">Thick (8px)</option>
           </select>
-        </div>
 
-        <div class="tool-group">
           <button id="clear-btn">🧹 Clear Canvas</button>
         </div>
       </div>
@@ -203,8 +274,27 @@
       <canvas id="teacher-canvas"></canvas>
     </div>
 
-    <!-- Right Column: Dual ASR Engine Speech Streaming -->
+    <!-- Right Column: Subject Selector & Dual ASR Engine Speech Streaming -->
     <div class="panel">
+      <!-- Subject Class Management -->
+      <div style="margin-bottom: 15px; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); padding: 12px; border-radius: 12px;">
+        <div class="panel-title" style="margin-bottom: 8px; font-size: 0.88rem; color: #38bdf8;">📚 Select / Create Subject Class</div>
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <select id="subject-select" style="flex: 1; padding: 8px; background: #090d16; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; font-size: 0.82rem; outline: none;">
+            <option value="cs101-recursion">CS101: Recursion & Binary Search Trees</option>
+            <option value="se202-software-engineering">SE202: Software Engineering</option>
+            <option value="cn301-computer-networks">CN301: Computer Networks</option>
+            <option value="__new__">➕ Create New Subject Class...</option>
+          </select>
+        </div>
+
+        <!-- New Subject Creator (Hidden by default) -->
+        <div id="new-subject-container" style="display: none; gap: 6px; margin-top: 6px;">
+          <input type="text" id="new-subject-input" placeholder="e.g. Operating Systems, DBMS..." style="flex: 1; padding: 6px 10px; background: #090d16; border: 1px solid #38bdf8; border-radius: 6px; color: #fff; font-size: 0.8rem; outline: none;" />
+          <button id="create-subject-btn" style="padding: 6px 12px; font-size: 0.78rem; background: #38bdf8; color: #000; border: none; font-weight: 700;">Add Class</button>
+        </div>
+      </div>
+
       <div class="panel-title">⚡ Real-Time Speech Capture Engines</div>
       
       <!-- Option A: Studio PCM Audio Streaming (99% Accuracy) -->

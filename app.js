@@ -76,6 +76,31 @@ class SmartClassroomStudentApp {
     this.statusText = document.getElementById("status-text");
     this.debugConsole = document.getElementById("debug-console");
 
+    // Recorded Lectures Modal DOM Cache
+    this.recordingsBtn = document.getElementById("recordings-btn");
+    this.recordingsModal = document.getElementById("recordings-modal");
+    this.closeModalBtn = document.getElementById("close-modal-btn");
+    this.recordingsGrid = document.getElementById("recordings-grid");
+    this.playerContainer = document.getElementById("player-container");
+    this.videoPlayer = document.getElementById("lecture-video-player");
+    this.playingTitle = document.getElementById("playing-title");
+
+    // Infinite Pan & Zoom State & DOM Cache
+    this.panX = 0;
+    this.panY = 0;
+    this.zoom = 1.0;
+    this.isPanning = false;
+    this.isPanMode = false;
+    this.panStart = { x: 0, y: 0 };
+
+    this.studentPanBtn = document.getElementById("student-pan-btn");
+    this.studentResetBtn = document.getElementById("student-reset-btn");
+    this.studentZoomInBtn = document.getElementById("student-zoom-in-btn");
+    this.studentZoomOutBtn = document.getElementById("student-zoom-out-btn");
+    this.studentZoomResetBtn = document.getElementById("student-zoom-reset-btn");
+    this.studentZoomBadge = document.getElementById("student-zoom-badge");
+    this.studentPanCoords = document.getElementById("student-pan-coords");
+
     this.initCanvasSize();
     this.bindEvents();
     this.loadLectureSession(this.currentLecture);
@@ -91,11 +116,113 @@ class SmartClassroomStudentApp {
     this.canvas.height = this.canvasHeight;
   }
 
+  zoomAt(screenX, screenY, factor) {
+    const rect = this.canvas.getBoundingClientRect();
+    const canvasX = screenX - rect.left;
+    const canvasY = screenY - rect.top;
+
+    const worldPt = {
+      x: (canvasX - this.panX) / this.zoom,
+      y: (canvasY - this.panY) / this.zoom
+    };
+
+    let newZoom = this.zoom * factor;
+    newZoom = Math.min(Math.max(0.25, newZoom), 4.0);
+
+    this.panX = canvasX - worldPt.x * newZoom;
+    this.panY = canvasY - worldPt.y * newZoom;
+    this.zoom = newZoom;
+
+    this.renderWhiteboardStrokes();
+  }
+
   bindEvents() {
     window.addEventListener("resize", () => {
       this.initCanvasSize();
       this.renderWhiteboardStrokes();
     });
+
+    // Mouse Wheel Zooming at Cursor Position
+    this.canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 0.85;
+      this.zoomAt(e.clientX, e.clientY, factor);
+    }, { passive: false });
+
+    // Student Zoom Controls
+    if (this.studentZoomInBtn) {
+      this.studentZoomInBtn.addEventListener("click", () => {
+        const rect = this.canvas.getBoundingClientRect();
+        this.zoomAt(rect.left + this.canvasWidth / 2, rect.top + this.canvasHeight / 2, 1.25);
+      });
+    }
+
+    if (this.studentZoomOutBtn) {
+      this.studentZoomOutBtn.addEventListener("click", () => {
+        const rect = this.canvas.getBoundingClientRect();
+        this.zoomAt(rect.left + this.canvasWidth / 2, rect.top + this.canvasHeight / 2, 0.8);
+      });
+    }
+
+    if (this.studentZoomResetBtn) {
+      this.studentZoomResetBtn.addEventListener("click", () => {
+        this.zoom = 1.0;
+        this.panX = 0;
+        this.panY = 0;
+        this.renderWhiteboardStrokes();
+      });
+    }
+
+    if (this.studentPanBtn) {
+      this.studentPanBtn.addEventListener("click", () => {
+        this.isPanMode = !this.isPanMode;
+        this.studentPanBtn.classList.toggle("active", this.isPanMode);
+        this.canvas.style.cursor = this.isPanMode ? "grab" : "default";
+      });
+    }
+
+    if (this.studentResetBtn) {
+      this.studentResetBtn.addEventListener("click", () => {
+        this.panX = 0;
+        this.panY = 0;
+        this.renderWhiteboardStrokes();
+      });
+    }
+
+    this.canvas.addEventListener("pointerdown", (e) => {
+      if (this.isPanMode || e.button === 1 || e.button === 2) {
+        this.isPanning = true;
+        this.panStart = { x: e.clientX - this.panX, y: e.clientY - this.panY };
+        this.canvas.style.cursor = "grabbing";
+      }
+    });
+
+    this.canvas.addEventListener("pointermove", (e) => {
+      if (this.isPanning) {
+        this.panX = e.clientX - this.panStart.x;
+        this.panY = e.clientY - this.panStart.y;
+        this.renderWhiteboardStrokes();
+      }
+    });
+
+    this.canvas.addEventListener("pointerup", () => {
+      if (this.isPanning) {
+        this.isPanning = false;
+        this.canvas.style.cursor = this.isPanMode ? "grab" : "default";
+      }
+    });
+
+    if (this.recordingsBtn) {
+      this.recordingsBtn.addEventListener("click", () => this.openRecordingsModal());
+    }
+    if (this.closeModalBtn) {
+      this.closeModalBtn.addEventListener("click", () => this.closeRecordingsModal());
+    }
+    if (this.recordingsModal) {
+      this.recordingsModal.addEventListener("click", (e) => {
+        if (e.target === this.recordingsModal) this.closeRecordingsModal();
+      });
+    }
 
     this.sessionSelect.addEventListener("change", (e) => {
       this.currentSessionId = e.target.value;
@@ -414,20 +541,38 @@ class SmartClassroomStudentApp {
     }
   }
 
+  worldToScreen(worldX, worldY) {
+    return {
+      x: worldX * this.zoom + this.panX,
+      y: worldY * this.zoom + this.panY
+    };
+  }
+
   renderGridBackground() {
-    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
+    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
     this.ctx.lineWidth = 1;
-    for (let x = 0; x < this.canvasWidth; x += 40) {
+    const step = 40 * this.zoom;
+    const offsetX = (this.panX % step + step) % step;
+    const offsetY = (this.panY % step + step) % step;
+
+    for (let x = offsetX; x < this.canvasWidth; x += step) {
       this.ctx.beginPath();
       this.ctx.moveTo(x, 0);
       this.ctx.lineTo(x, this.canvasHeight);
       this.ctx.stroke();
     }
-    for (let y = 0; y < this.canvasHeight; y += 40) {
+    for (let y = offsetY; y < this.canvasHeight; y += step) {
       this.ctx.beginPath();
       this.ctx.moveTo(0, y);
       this.ctx.lineTo(this.canvasWidth, y);
       this.ctx.stroke();
+    }
+
+    if (this.studentPanCoords) {
+      this.studentPanCoords.textContent = `Pan: (${Math.round(this.panX)}, ${Math.round(this.panY)})`;
+    }
+    if (this.studentZoomBadge) {
+      this.studentZoomBadge.textContent = `${Math.round(this.zoom * 100)}%`;
     }
   }
 
@@ -435,15 +580,18 @@ class SmartClassroomStudentApp {
     if (!stroke || !stroke.points || stroke.points.length < 2) return;
     this.ctx.beginPath();
     this.ctx.strokeStyle = stroke.color || "#38bdf8";
-    this.ctx.lineWidth = stroke.size || 3;
+    this.ctx.lineWidth = (stroke.size || 3) * this.zoom;
     this.ctx.lineCap = "round";
     this.ctx.lineJoin = "round";
 
     stroke.points.forEach((p, idx) => {
-      const x = p.x * this.canvasWidth;
-      const y = p.y * this.canvasHeight;
-      if (idx === 0) this.ctx.moveTo(x, y);
-      else this.ctx.lineTo(x, y);
+      // Support both normalized (0..1) legacy points and new world space points
+      const worldX = (p.x <= 1 && p.x >= 0) ? p.x * this.canvasWidth : p.x;
+      const worldY = (p.y <= 1 && p.y >= 0) ? p.y * this.canvasHeight : p.y;
+      const screenPt = this.worldToScreen(worldX, worldY);
+
+      if (idx === 0) this.ctx.moveTo(screenPt.x, screenPt.y);
+      else this.ctx.lineTo(screenPt.x, screenPt.y);
     });
     this.ctx.stroke();
   }
@@ -562,6 +710,100 @@ class SmartClassroomStudentApp {
     const secs = Math.floor(seconds % 60);
     const ms = Math.floor((seconds % 1) * 1000);
     return `00:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+  }
+
+  // =========================================================================
+  // Recorded Lectures Video Library Modal & HTML5 Video Player Engine
+  // =========================================================================
+  // =========================================================================
+  // Recorded Lectures Video Library Modal & HTML5 Video Player Engine
+  // =========================================================================
+  async openRecordingsModal() {
+    if (!this.recordingsModal) return;
+    this.recordingsModal.style.display = "flex";
+    this.logDebug("LIBRARY", "Opening Recorded Lectures Library...");
+
+    try {
+      const response = await fetch('/api/subjects');
+      const data = await response.json();
+      this.cachedSubjects = (data.success && data.subjects) ? data.subjects : [];
+      this.populateSubjectFilter(this.cachedSubjects);
+      this.renderRecordingsGrid("all");
+    } catch (err) {
+      this.logDebug("LIBRARY_ERR", `Failed to load subjects: ${err.message}`);
+    }
+  }
+
+  populateSubjectFilter(subjects) {
+    const filterSelect = document.getElementById("subject-filter-select");
+    if (!filterSelect) return;
+
+    filterSelect.innerHTML = `<option value="all">📚 All Subjects / Classes</option>`;
+    subjects.forEach(sub => {
+      const recCount = sub.recordings ? sub.recordings.length : 0;
+      const opt = document.createElement("option");
+      opt.value = sub.id;
+      opt.textContent = `📖 ${sub.name} (${recCount} Videos)`;
+      filterSelect.appendChild(opt);
+    });
+
+    filterSelect.onchange = (e) => {
+      this.renderRecordingsGrid(e.target.value);
+    };
+  }
+
+  closeRecordingsModal() {
+    if (!this.recordingsModal) return;
+    this.recordingsModal.style.display = "none";
+    if (this.videoPlayer) {
+      this.videoPlayer.pause();
+    }
+  }
+
+  renderRecordingsGrid(selectedSubjectId = "all") {
+    if (!this.recordingsGrid) return;
+    this.recordingsGrid.innerHTML = "";
+
+    const subjectsToRender = (selectedSubjectId === "all")
+      ? (this.cachedSubjects || [])
+      : (this.cachedSubjects || []).filter(s => s.id === selectedSubjectId);
+
+    let totalVideos = 0;
+
+    subjectsToRender.forEach(subject => {
+      const recs = subject.recordings || [];
+      recs.forEach(rec => {
+        totalVideos++;
+        const card = document.createElement("div");
+        card.className = "lecture-card";
+        card.innerHTML = `
+          <div class="lecture-card-title">📹 ${rec.title || "Lecture Video"}</div>
+          <div class="lecture-card-meta">📚 <strong>${subject.name}</strong></div>
+          <div class="lecture-card-meta">👨‍🏫 ${subject.instructor || "Prof. A. Sharma"}</div>
+          <div class="lecture-card-meta">🕒 ${rec.formattedDate || "Recorded"}</div>
+          <div class="storage-badge">${rec.uploadMethod || "GitHub Video"}</div>
+        `;
+
+        card.addEventListener("click", () => {
+          this.playRecordedVideo(rec.videoUrl, `${subject.name} - ${rec.title}`);
+        });
+
+        this.recordingsGrid.appendChild(card);
+      });
+    });
+
+    if (totalVideos === 0) {
+      this.recordingsGrid.innerHTML = `<div style="grid-column: 1/-1; color: #94a3b8; font-size: 0.9rem; text-align: center; padding: 30px;">No recorded videos available for this subject yet.</div>`;
+    }
+  }
+
+  playRecordedVideo(videoUrl, title) {
+    if (!this.videoPlayer || !this.playerContainer) return;
+    this.playerContainer.style.display = "block";
+    if (this.playingTitle) this.playingTitle.textContent = `▶ Now Playing: ${title}`;
+    this.videoPlayer.src = videoUrl;
+    this.videoPlayer.play().catch(e => console.log("Auto-play handling:", e));
+    this.logDebug("VIDEO", `Streaming recorded video: ${videoUrl}`);
   }
 
   logDebug(tag, msg) {

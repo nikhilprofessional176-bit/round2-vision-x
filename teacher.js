@@ -23,6 +23,15 @@ class TeacherControlPanel {
     this.mediaStream = null;
     this.audioProcessor = null;
 
+    // Infinite Whiteboard & Viewport Pan/Zoom State
+    this.currentTool = "draw"; // "draw" or "pan"
+    this.panX = 0;
+    this.panY = 0;
+    this.zoom = 1.0;
+    this.isPanning = false;
+    this.panStart = { x: 0, y: 0 };
+    this.strokes = [];
+
     // Drawing State
     this.isDrawing = false;
     this.currentPoints = [];
@@ -42,10 +51,29 @@ class TeacherControlPanel {
     this.captionInput = document.getElementById("caption-input");
     this.sendCaptionBtn = document.getElementById("send-caption-btn");
     this.logBox = document.getElementById("log-box");
+    this.recordBtn = document.getElementById("record-toggle-btn");
+    this.recordIndicator = document.getElementById("recording-indicator");
+
+    // Infinite Whiteboard Tool & Zoom Buttons
+    this.drawToolBtn = document.getElementById("tool-draw-btn");
+    this.panToolBtn = document.getElementById("tool-pan-btn");
+    this.resetViewBtn = document.getElementById("reset-view-btn");
+    this.zoomInBtn = document.getElementById("zoom-in-btn");
+    this.zoomOutBtn = document.getElementById("zoom-out-btn");
+    this.zoomResetBtn = document.getElementById("zoom-reset-btn");
+    this.zoomBadge = document.getElementById("zoom-badge");
+    this.panCoordsBadge = document.getElementById("pan-coords-badge");
+
+    // Subject Management DOM Elements
+    this.subjectSelect = document.getElementById("subject-select");
+    this.newSubjectContainer = document.getElementById("new-subject-container");
+    this.newSubjectInput = document.getElementById("new-subject-input");
+    this.createSubjectBtn = document.getElementById("create-subject-btn");
 
     this.setupCanvas();
     this.bindEvents();
     this.initSpeechRecognition();
+    this.loadSubjects();
     this.connectWebSocket();
   }
 
@@ -55,19 +83,60 @@ class TeacherControlPanel {
     this.canvas.height = 450;
     this.ctx.lineCap = "round";
     this.ctx.lineJoin = "round";
-    this.renderGridBackground();
+    this.redrawCanvas();
+  }
+
+  screenToWorld(screenX, screenY) {
+    const rect = this.canvas.getBoundingClientRect();
+    const canvasX = screenX - rect.left;
+    const canvasY = screenY - rect.top;
+    return {
+      x: (canvasX - this.panX) / this.zoom,
+      y: (canvasY - this.panY) / this.zoom
+    };
+  }
+
+  worldToScreen(worldX, worldY) {
+    return {
+      x: worldX * this.zoom + this.panX,
+      y: worldY * this.zoom + this.panY
+    };
+  }
+
+  zoomAt(screenX, screenY, factor) {
+    const rect = this.canvas.getBoundingClientRect();
+    const canvasX = screenX - rect.left;
+    const canvasY = screenY - rect.top;
+
+    const worldPt = {
+      x: (canvasX - this.panX) / this.zoom,
+      y: (canvasY - this.panY) / this.zoom
+    };
+
+    let newZoom = this.zoom * factor;
+    newZoom = Math.min(Math.max(0.25, newZoom), 4.0);
+
+    this.panX = canvasX - worldPt.x * newZoom;
+    this.panY = canvasY - worldPt.y * newZoom;
+    this.zoom = newZoom;
+
+    this.redrawCanvas();
   }
 
   renderGridBackground() {
-    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.03)";
+    this.ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
     this.ctx.lineWidth = 1;
-    for (let x = 0; x < this.canvas.width; x += 40) {
+    const step = 40 * this.zoom;
+    const offsetX = (this.panX % step + step) % step;
+    const offsetY = (this.panY % step + step) % step;
+
+    for (let x = offsetX; x < this.canvas.width; x += step) {
       this.ctx.beginPath();
       this.ctx.moveTo(x, 0);
       this.ctx.lineTo(x, this.canvas.height);
       this.ctx.stroke();
     }
-    for (let y = 0; y < this.canvas.height; y += 40) {
+    for (let y = offsetY; y < this.canvas.height; y += step) {
       this.ctx.beginPath();
       this.ctx.moveTo(0, y);
       this.ctx.lineTo(this.canvas.width, y);
@@ -75,15 +144,118 @@ class TeacherControlPanel {
     }
   }
 
+  redrawCanvas() {
+    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.renderGridBackground();
+
+    // Redraw all historical strokes in world space with zoom scale
+    this.strokes.forEach(stroke => this.drawSingleWorldStroke(stroke));
+
+    if (this.panCoordsBadge) {
+      this.panCoordsBadge.textContent = `Pan: (${Math.round(this.panX)}, ${Math.round(this.panY)})`;
+    }
+    if (this.zoomBadge) {
+      this.zoomBadge.textContent = `${Math.round(this.zoom * 100)}%`;
+    }
+  }
+
+  drawSingleWorldStroke(stroke) {
+    if (!stroke || !stroke.points || stroke.points.length < 2) return;
+    this.ctx.beginPath();
+    this.ctx.strokeStyle = stroke.color || "#38bdf8";
+    this.ctx.lineWidth = (stroke.size || 4) * this.zoom;
+    this.ctx.lineCap = "round";
+    this.ctx.lineJoin = "round";
+
+    stroke.points.forEach((pt, idx) => {
+      const screenPt = this.worldToScreen(pt.x, pt.y);
+      if (idx === 0) this.ctx.moveTo(screenPt.x, screenPt.y);
+      else this.ctx.lineTo(screenPt.x, screenPt.y);
+    });
+    this.ctx.stroke();
+  }
+
   bindEvents() {
     window.addEventListener("resize", () => this.setupCanvas());
+
+    // Mouse Wheel Zooming at Cursor Position
+    this.canvas.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.15 : 0.85;
+      this.zoomAt(e.clientX, e.clientY, factor);
+    }, { passive: false });
+
+    // Zoom Buttons
+    if (this.zoomInBtn) {
+      this.zoomInBtn.addEventListener("click", () => {
+        const rect = this.canvas.getBoundingClientRect();
+        this.zoomAt(rect.left + this.canvas.width / 2, rect.top + this.canvas.height / 2, 1.25);
+      });
+    }
+
+    if (this.zoomOutBtn) {
+      this.zoomOutBtn.addEventListener("click", () => {
+        const rect = this.canvas.getBoundingClientRect();
+        this.zoomAt(rect.left + this.canvas.width / 2, rect.top + this.canvas.height / 2, 0.8);
+      });
+    }
+
+    if (this.zoomResetBtn) {
+      this.zoomResetBtn.addEventListener("click", () => {
+        this.zoom = 1.0;
+        this.panX = 0;
+        this.panY = 0;
+        this.redrawCanvas();
+        this.log("🎯 Zoom reset to 100% (1.0x).");
+      });
+    }
+
+    // Tool Switchers
+    if (this.drawToolBtn) {
+      this.drawToolBtn.addEventListener("click", () => {
+        this.currentTool = "draw";
+        this.drawToolBtn.classList.add("active");
+        this.drawToolBtn.style.background = "#38bdf8";
+        this.drawToolBtn.style.color = "#000";
+        if (this.panToolBtn) {
+          this.panToolBtn.classList.remove("active");
+          this.panToolBtn.style.background = "#1e293b";
+          this.panToolBtn.style.color = "#fff";
+        }
+        this.canvas.style.cursor = "crosshair";
+      });
+    }
+
+    if (this.panToolBtn) {
+      this.panToolBtn.addEventListener("click", () => {
+        this.currentTool = "pan";
+        this.panToolBtn.classList.add("active");
+        this.panToolBtn.style.background = "#38bdf8";
+        this.panToolBtn.style.color = "#000";
+        if (this.drawToolBtn) {
+          this.drawToolBtn.classList.remove("active");
+          this.drawToolBtn.style.background = "#1e293b";
+          this.drawToolBtn.style.color = "#fff";
+        }
+        this.canvas.style.cursor = "grab";
+      });
+    }
+
+    if (this.resetViewBtn) {
+      this.resetViewBtn.addEventListener("click", () => {
+        this.panX = 0;
+        this.panY = 0;
+        this.redrawCanvas();
+        this.log("🎯 Whiteboard viewport reset to (0,0).");
+      });
+    }
 
     this.colorPicker.addEventListener("change", (e) => this.currentColor = e.target.value);
     this.sizePicker.addEventListener("change", (e) => this.currentSize = parseInt(e.target.value));
 
     this.clearBtn.addEventListener("click", () => {
-      this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      this.renderGridBackground();
+      this.strokes = [];
+      this.redrawCanvas();
       this.broadcastMessage({ type: "clear_canvas", sessionId: this.sessionId });
       this.log("Canvas cleared and synced.");
     });
@@ -103,6 +275,82 @@ class TeacherControlPanel {
     this.pcmBtn.addEventListener("click", () => this.togglePCMStream());
     this.micBtn.addEventListener("click", () => this.toggleMicStream());
     this.sendCaptionBtn.addEventListener("click", () => this.sendManualCaption());
+
+    // Client-Side Lecture Screen & Audio Recording Button
+    if (this.recordBtn) {
+      this.recordBtn.addEventListener("click", () => this.toggleLectureRecording());
+    }
+
+    // Subject Class Selection & Creation Events
+    if (this.subjectSelect) {
+      this.subjectSelect.addEventListener("change", (e) => {
+        if (e.target.value === "__new__") {
+          if (this.newSubjectContainer) this.newSubjectContainer.style.display = "flex";
+        } else {
+          if (this.newSubjectContainer) this.newSubjectContainer.style.display = "none";
+          this.sessionId = e.target.value;
+        }
+      });
+    }
+
+    if (this.createSubjectBtn) {
+      this.createSubjectBtn.addEventListener("click", () => this.createNewSubjectClass());
+    }
+  }
+
+  async loadSubjects() {
+    if (!this.subjectSelect) return;
+    try {
+      const res = await fetch('/api/subjects');
+      const data = await res.json();
+      if (data.success && data.subjects && data.subjects.length > 0) {
+        this.subjectSelect.innerHTML = "";
+        data.subjects.forEach(sub => {
+          const opt = document.createElement("option");
+          opt.value = sub.id;
+          opt.textContent = sub.name;
+          this.subjectSelect.appendChild(opt);
+        });
+        const newOpt = document.createElement("option");
+        newOpt.value = "__new__";
+        newOpt.textContent = "➕ Create New Subject Class...";
+        this.subjectSelect.appendChild(newOpt);
+
+        if (this.subjectSelect.options.length > 1) {
+          this.sessionId = this.subjectSelect.value;
+        }
+      }
+    } catch(e) {
+      console.log("Failed to load subjects:", e);
+    }
+  }
+
+  async createNewSubjectClass() {
+    const name = this.newSubjectInput?.value?.trim();
+    if (!name) return alert("Please enter a subject class name.");
+
+    try {
+      const res = await fetch('/api/create-subject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, instructor: "Prof. A. Sharma" })
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (this.newSubjectInput) this.newSubjectInput.value = "";
+        if (this.newSubjectContainer) this.newSubjectContainer.style.display = "none";
+        await this.loadSubjects();
+        if (this.subjectSelect && data.subject) {
+          this.subjectSelect.value = data.subject.id;
+          this.sessionId = data.subject.id;
+        }
+        this.log(`📚 Created new subject class: "${data.subject.name}"`);
+      } else {
+        alert(data.message);
+      }
+    } catch(err) {
+      alert("Error creating subject: " + err.message);
+    }
   }
 
   // =========================================================================
@@ -166,38 +414,54 @@ class TeacherControlPanel {
   }
 
   // =========================================================================
-  // Canvas Vector Stroke Broadcaster
+  // Infinite Vector Stroke Broadcaster & Pan Handler
   // =========================================================================
   startStroke(e) {
+    if (this.currentTool === "pan" || e.button === 1 || e.button === 2) {
+      this.isPanning = true;
+      this.panStart = { x: e.clientX - this.panX, y: e.clientY - this.panY };
+      this.canvas.style.cursor = "grabbing";
+      return;
+    }
+
     this.isDrawing = true;
-    const rect = this.canvas.getBoundingClientRect();
-    const pt = {
-      x: (e.clientX - rect.left) / this.canvas.width,
-      y: (e.clientY - rect.top) / this.canvas.height
-    };
-    this.currentPoints = [pt];
+    const worldPt = this.screenToWorld(e.clientX, e.clientY);
+    this.currentPoints = [worldPt];
   }
 
   drawStroke(e) {
-    if (!this.isDrawing) return;
-    const rect = this.canvas.getBoundingClientRect();
-    const pt = {
-      x: (e.clientX - rect.left) / this.canvas.width,
-      y: (e.clientY - rect.top) / this.canvas.height
-    };
-    this.currentPoints.push(pt);
+    if (this.isPanning) {
+      this.panX = e.clientX - this.panStart.x;
+      this.panY = e.clientY - this.panStart.y;
+      this.redrawCanvas();
+      return;
+    }
 
-    // Draw locally on canvas
-    const prev = this.currentPoints[this.currentPoints.length - 2];
+    if (!this.isDrawing) return;
+    const worldPt = this.screenToWorld(e.clientX, e.clientY);
+    this.currentPoints.push(worldPt);
+
+    const prevWorld = this.currentPoints[this.currentPoints.length - 2];
+    const prevScreen = this.worldToScreen(prevWorld.x, prevWorld.y);
+    const currScreen = this.worldToScreen(worldPt.x, worldPt.y);
+
     this.ctx.beginPath();
     this.ctx.strokeStyle = this.currentColor;
     this.ctx.lineWidth = this.currentSize;
-    this.ctx.moveTo(prev.x * this.canvas.width, prev.y * this.canvas.height);
-    this.ctx.lineTo(pt.x * this.canvas.width, pt.y * this.canvas.height);
+    this.ctx.lineCap = "round";
+    this.ctx.lineJoin = "round";
+    this.ctx.moveTo(prevScreen.x, prevScreen.y);
+    this.ctx.lineTo(currScreen.x, currScreen.y);
     this.ctx.stroke();
   }
 
   endStroke() {
+    if (this.isPanning) {
+      this.isPanning = false;
+      this.canvas.style.cursor = this.currentTool === "pan" ? "grab" : "crosshair";
+      return;
+    }
+
     if (!this.isDrawing) return;
     this.isDrawing = false;
     if (this.currentPoints.length >= 2) {
@@ -205,8 +469,10 @@ class TeacherControlPanel {
         id: `strk-${Date.now()}`,
         color: this.currentColor,
         size: this.currentSize,
-        points: this.currentPoints
+        points: this.currentPoints // World space points
       };
+
+      this.strokes.push(strokeObj);
 
       this.broadcastMessage({
         type: "stroke",
@@ -349,6 +615,208 @@ class TeacherControlPanel {
   broadcastMessage(obj) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(obj));
+    }
+  }
+
+  // =========================================================================
+  // Client-Side Lecture Screen & Audio Recording Engine (MediaRecorder API)
+  // =========================================================================
+  async toggleLectureRecording() {
+    if (this.isScreenRecording) {
+      this.stopLectureRecording();
+    } else {
+      await this.startLectureRecording();
+    }
+  }
+
+  async startLectureRecording() {
+    try {
+      this.log("🎥 Requesting screen and audio capture permission...");
+
+      // 1. Capture screen video and system audio via getDisplayMedia
+      const displayStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          displaySurface: "browser",
+          frameRate: { max: 30 }
+        },
+        audio: true
+      });
+
+      // 2. Capture microphone audio via getUserMedia if available
+      let micStream = null;
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true }
+        });
+      } catch (micErr) {
+        this.log("Mic audio capture notice: " + micErr.message);
+      }
+
+      // 3. Web Audio API Audio Mixer: Mix System/Tab Audio + Mic Audio into 1 single Audio Track
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const audioDestination = audioCtx.createMediaStreamDestination();
+      let hasAudioTrack = false;
+
+      // Mix Tab / System Audio if user shared tab/system audio
+      if (displayStream.getAudioTracks().length > 0) {
+        const displaySource = audioCtx.createMediaStreamSource(new MediaStream([displayStream.getAudioTracks()[0]]));
+        displaySource.connect(audioDestination);
+        hasAudioTrack = true;
+      }
+
+      // Mix Microphone Audio
+      if (micStream && micStream.getAudioTracks().length > 0) {
+        const micSource = audioCtx.createMediaStreamSource(new MediaStream([micStream.getAudioTracks()[0]]));
+        micSource.connect(audioDestination);
+        hasAudioTrack = true;
+      } else if (this.mediaStream && this.mediaStream.getAudioTracks().length > 0) {
+        const existingMicSource = audioCtx.createMediaStreamSource(new MediaStream([this.mediaStream.getAudioTracks()[0]]));
+        existingMicSource.connect(audioDestination);
+        hasAudioTrack = true;
+      }
+
+      // Combine screen video track with mixed audio track
+      const tracks = [...displayStream.getVideoTracks()];
+      if (hasAudioTrack && audioDestination.stream.getAudioTracks().length > 0) {
+        tracks.push(audioDestination.stream.getAudioTracks()[0]);
+      }
+
+      this.recordingAudioCtx = audioCtx;
+      this.recordingStream = new MediaStream(tracks);
+
+      // Handle user stopping screen share from browser floating toolbar
+      displayStream.getVideoTracks()[0].onended = () => {
+        this.log("Screen share stopped by user via browser control.");
+        this.stopLectureRecording();
+      };
+
+      // 3. MediaRecorder Initialization with mimeType selection
+      let mimeType = 'video/webm;codecs=vp9,opus';
+      if (!MediaRecorder.isTypeSupported(mimeType)) {
+        mimeType = 'video/webm;codecs=vp8,opus';
+        if (!MediaRecorder.isTypeSupported(mimeType)) {
+          mimeType = 'video/webm';
+        }
+      }
+
+      this.mediaRecorder = new MediaRecorder(this.recordingStream, { mimeType });
+      this.recordedChunks = [];
+
+      // 4. Chunk Management
+      this.mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          this.recordedChunks.push(event.data);
+        }
+      };
+
+      // 5. Save & Download on Stop
+      this.mediaRecorder.onstop = () => {
+        this.saveAndDownloadRecording();
+        this.cleanUpRecordingTracks();
+      };
+
+      this.mediaRecorder.start(1000); // Collect 1-second chunks
+      this.isScreenRecording = true;
+
+      // Update UI
+      if (this.recordBtn) {
+        this.recordBtn.innerHTML = "⏹️ Stop Recording";
+        this.recordBtn.classList.add("recording");
+      }
+      if (this.recordIndicator) {
+        this.recordIndicator.style.display = "flex";
+      }
+
+      this.log(`🔴 Client-side lecture recording started! [Codec: ${mimeType}]`);
+
+    } catch (err) {
+      this.log(`Recording Error: ${err.message}`);
+      if (err.name !== 'NotAllowedError') {
+        alert(`Could not start screen recording: ${err.message}`);
+      }
+      this.cleanUpRecordingTracks();
+    }
+  }
+
+  stopLectureRecording() {
+    if (!this.isScreenRecording) return;
+    this.isScreenRecording = false;
+
+    if (this.mediaRecorder && this.mediaRecorder.state !== "inactive") {
+      this.mediaRecorder.stop();
+    }
+
+    // Update UI
+    if (this.recordBtn) {
+      this.recordBtn.innerHTML = "🔴 Start Recording";
+      this.recordBtn.classList.remove("recording");
+    }
+    if (this.recordIndicator) {
+      this.recordIndicator.style.display = "none";
+    }
+
+    this.log("⏹️ Lecture recording stopped. Preparing file download...");
+  }
+
+  saveAndDownloadRecording() {
+    if (!this.recordedChunks || this.recordedChunks.length === 0) {
+      this.log("No recording data chunks to save.");
+      return;
+    }
+
+    const blob = new Blob(this.recordedChunks, { type: 'video/webm' });
+    const fileName = `Lecture_${this.sessionId}_${Date.now()}.webm`;
+    const fileSizeMB = (blob.size / (1024 * 1024)).toFixed(2);
+
+    this.log(`⏳ Processing lecture video (${fileSizeMB} MB) & uploading to GitHub repository...`);
+
+    const reader = new FileReader();
+    reader.readAsDataURL(blob);
+    reader.onloadend = async () => {
+      const base64data = reader.result;
+
+      const subId = this.subjectSelect?.value || this.sessionId || "cs101-recursion";
+      const subName = (this.subjectSelect && this.subjectSelect.selectedIndex >= 0)
+        ? this.subjectSelect.options[this.subjectSelect.selectedIndex].text
+        : "General Class";
+
+      try {
+        const response = await fetch('/api/upload-lecture', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoBase64: base64data,
+            filename: fileName,
+            subjectId: subId,
+            subjectName: subName
+          })
+        });
+
+        const resData = await response.json();
+        if (resData.success) {
+          this.log(`✅ Lecture video saved via ${resData.uploadMethod}!`);
+          this.log(`🔗 Video URL: ${resData.videoUrl}`);
+          alert(`🎉 Lecture Recording Uploaded Successfully!\n\nStorage: ${resData.uploadMethod}\nURL: ${resData.videoUrl}`);
+        } else {
+          this.log(`❌ Upload Error: ${resData.message}`);
+          alert(`Upload error: ${resData.message}`);
+        }
+      } catch (err) {
+        this.log(`❌ Upload Exception: ${err.message}`);
+      }
+
+      this.recordedChunks = [];
+    };
+  }
+
+  cleanUpRecordingTracks() {
+    if (this.recordingAudioCtx) {
+      try { this.recordingAudioCtx.close(); } catch(e){}
+      this.recordingAudioCtx = null;
+    }
+    if (this.recordingStream) {
+      this.recordingStream.getTracks().forEach(track => track.stop());
+      this.recordingStream = null;
     }
   }
 

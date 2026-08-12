@@ -1,24 +1,49 @@
 [
   {
     "id": "cs101-recursion",
-    "title": "CS101: Recursion & Binary Search Trees",
+    "name": "CS101: Recursion & Binary Search Trees",
     "instructor": "Prof. A. Sharma",
-    "course": "Computer Science 101",
-    "date": "Today (Live Session)",
-    "isLive": true,
-    "durationSeconds": 45,
-    "technicalTerms": ["recursion", "base case", "call stack", "binary search tree", "root node", "leaf node"],
-    "segments": []
+    "createdAt": "2026-08-13T00:00:00.000Z",
+    "recordings": []
   },
   {
-    "id": "ee201-circuits",
-    "title": "EE201: Operational Amplifiers & Feedback",
+    "id": "se202-software-engineering",
+    "name": "SE202: Software Engineering",
+    "instructor": "Prof. A. Sharma",
+    "createdAt": "2026-08-13T00:00:00.000Z",
+    "recordings": [
+      {
+        "id": "rec-1786575981772",
+        "title": "Lecture Video 1 (Aug 13, 2026, 04:36 AM)",
+        "videoUrl": "/recordings/Lecture_se202-software-engineering_1786575979519.webm",
+        "uploadMethod": "Local Server Storage",
+        "recordedAt": "2026-08-12T23:06:21.772Z",
+        "formattedDate": "Aug 13, 2026, 04:36 AM"
+      },
+      {
+        "id": "rec-1786576001340",
+        "title": "Lecture Video 2 (Aug 13, 2026, 04:36 AM)",
+        "videoUrl": "/recordings/Lecture_se202-software-engineering_1786575999053.webm",
+        "uploadMethod": "Local Server Storage",
+        "recordedAt": "2026-08-12T23:06:41.340Z",
+        "formattedDate": "Aug 13, 2026, 04:36 AM"
+      }
+    ]
+  },
+  {
+    "id": "cn301-computer-networks",
+    "name": "CN301: Computer Networks",
     "instructor": "Prof. R. Varma",
-    "course": "Electrical Engineering",
-    "date": "Yesterday",
-    "isLive": false,
-    "durationSeconds": 60,
-    "technicalTerms": ["op-amp", "feedback loop", "gain", "impedance"],
-    "segments": []
+    "createdAt": "2026-08-13T00:00:00.000Z",
+    "recordings": [
+      {
+        "id": "rec-1786576026946",
+        "title": "Lecture Video 1 (Aug 13, 2026, 04:37 AM)",
+        "videoUrl": "/recordings/Lecture_cn301-computer-networks_1786576025009.webm",
+        "uploadMethod": "Local Server Storage",
+        "recordedAt": "2026-08-12T23:07:06.946Z",
+        "formattedDate": "Aug 13, 2026, 04:37 AM"
+      }
+    ]
   }
 ]

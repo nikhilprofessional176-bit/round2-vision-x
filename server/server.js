@@ -27,23 +27,46 @@ try {
 }
 
 const PORT = process.env.PORT || 5000;
-const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || "e501b1b4d00fa56a6a9b4009214b98ee9d4e5f73";
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || "";
+const GITHUB_PAT = process.env.GITHUB_PAT || "";
+const GITHUB_OWNER = process.env.GITHUB_OWNER || "thehatrixop";
+const GITHUB_REPO = process.env.GITHUB_REPO || "vision-x-final-round";
 const PUBLIC_DIR = path.join(__dirname, '..');
 
-// In-Memory Lecture Store
-let sessions = [
-  {
-    id: "cs101-recursion",
-    title: "CS101: Recursion & Binary Search Trees",
-    instructor: "Prof. A. Sharma",
-    course: "Computer Science 101",
-    date: "Today (Live Session)",
-    isLive: true,
-    durationSeconds: 45,
-    technicalTerms: ["recursion", "base case", "call stack", "binary search tree", "root node", "leaf node"],
-    segments: []
+// Load sessions/subjects from sessions.json
+const sessionsFile = path.join(__dirname, 'sessions.json');
+let subjects = [];
+try {
+  if (fs.existsSync(sessionsFile)) {
+    subjects = JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
   }
-];
+} catch (e) {}
+
+if (!subjects || subjects.length === 0) {
+  subjects = [
+    {
+      id: "cs101-recursion",
+      name: "CS101: Recursion & Binary Search Trees",
+      instructor: "Prof. A. Sharma",
+      createdAt: new Date().toISOString(),
+      recordings: []
+    },
+    {
+      id: "se202-software-engineering",
+      name: "SE202: Software Engineering",
+      instructor: "Prof. A. Sharma",
+      createdAt: new Date().toISOString(),
+      recordings: []
+    },
+    {
+      id: "cn301-computer-networks",
+      name: "CN301: Computer Networks",
+      instructor: "Prof. R. Varma",
+      createdAt: new Date().toISOString(),
+      recordings: []
+    }
+  ];
+}
 
 // Circular Event Buffer Store (Key: sessionId -> { sequenceNumber: int, buffer: Array })
 const sessionStateMap = new Map();
@@ -82,13 +105,298 @@ const DICTIONARY = {
 // Express App Setup
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // Serve static frontend files (index.html, style.css, app.js, teacher.html, teacher.js)
 app.use(express.static(PUBLIC_DIR));
 
+// Helper: Upload file to GitHub Repository using GitHub REST API
+async function uploadToGitHub({ owner, repo, token, pathInRepo, base64Content, message }) {
+  const https = require('https');
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${pathInRepo}`;
+  const bodyData = JSON.stringify({
+    message: message || `Upload recorded lecture video ${pathInRepo}`,
+    content: base64Content
+  });
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(url, {
+      method: 'PUT',
+      headers: {
+        'User-Agent': 'Smart-Classroom-Server',
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyData)
+      }
+    }, (res) => {
+      let resBody = '';
+      res.on('data', chunk => resBody += chunk);
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            const parsed = JSON.parse(resBody);
+            resolve({
+              success: true,
+              downloadUrl: parsed.content ? parsed.content.download_url : null,
+              rawUrl: `https://raw.githubusercontent.com/${owner}/${repo}/main/${pathInRepo}`
+            });
+          } catch(e) {
+            resolve({ success: true, rawUrl: `https://raw.githubusercontent.com/${owner}/${repo}/main/${pathInRepo}` });
+          }
+        } else {
+          reject(new Error(`GitHub API HTTP ${res.statusCode}: ${resBody}`));
+        }
+      });
+    });
+
+    req.on('error', (err) => reject(err));
+    req.write(bodyData);
+    req.end();
+  });
+}
+
+// Helper: Delete file from GitHub Repository using GitHub REST API
+async function deleteFromGitHub({ owner, repo, token, pathInRepo }) {
+  const https = require('https');
+  const getUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${pathInRepo}`;
+
+  const sha = await new Promise((resolve) => {
+    const req = https.request(getUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Smart-Classroom-Server',
+        'Authorization': `Bearer ${token}`
+      }
+    }, (res) => {
+      let body = '';
+      res.on('data', chunk => body += chunk);
+      res.on('end', () => {
+        try {
+          const parsed = JSON.parse(body);
+          resolve(parsed.sha || null);
+        } catch(e) { resolve(null); }
+      });
+    });
+    req.on('error', () => resolve(null));
+    req.end();
+  });
+
+  if (!sha) {
+    console.log(`[GITHUB AUTO-CLEANUP] Could not retrieve file SHA for ${pathInRepo}`);
+    return false;
+  }
+
+  const bodyData = JSON.stringify({
+    message: `auto-delete 7-day-old lecture recording ${pathInRepo}`,
+    sha: sha
+  });
+
+  return new Promise((resolve) => {
+    const req = https.request(getUrl, {
+      method: 'DELETE',
+      headers: {
+        'User-Agent': 'Smart-Classroom-Server',
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        'Content-Length': Buffer.byteLength(bodyData)
+      }
+    }, (res) => {
+      resolve(res.statusCode >= 200 && res.statusCode < 300);
+    });
+    req.on('error', () => resolve(false));
+    req.write(bodyData);
+    req.end();
+  });
+}
+
+// Automatic 7-Day Recording Cleanup Task
+async function cleanupOldRecordings() {
+  const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  let modified = false;
+
+  for (let i = 0; i < subjects.length; i++) {
+    const subject = subjects[i];
+    if (!subject.recordings || subject.recordings.length === 0) continue;
+
+    for (let r = subject.recordings.length - 1; r >= 0; r--) {
+      const rec = subject.recordings[r];
+      if (!rec.recordedAt || !rec.videoUrl) continue;
+
+      const recordedTime = new Date(rec.recordedAt).getTime();
+      if (now - recordedTime > SEVEN_DAYS_MS) {
+        console.log(`[AUTO-CLEANUP] Deleting 7-day-old lecture recording: "${rec.title}" (${rec.recordedAt})`);
+
+        if (rec.videoUrl.includes('githubusercontent.com')) {
+          const parts = rec.videoUrl.split('/recordings/');
+          if (parts.length > 1) {
+            const filename = parts[1];
+            const pathInRepo = `recordings/${filename}`;
+            await deleteFromGitHub({
+              owner: GITHUB_OWNER,
+              repo: GITHUB_REPO,
+              token: GITHUB_PAT,
+              pathInRepo: pathInRepo
+            });
+            console.log(`[AUTO-CLEANUP SUCCESS] Deleted file from GitHub repository: ${pathInRepo}`);
+          }
+        } else if (rec.videoUrl.startsWith('/recordings/')) {
+          const localPath = path.join(PUBLIC_DIR, rec.videoUrl);
+          if (fs.existsSync(localPath)) {
+            fs.unlinkSync(localPath);
+            console.log(`[AUTO-CLEANUP SUCCESS] Deleted local server file: ${localPath}`);
+          }
+        }
+
+        subject.recordings.splice(r, 1);
+        modified = true;
+      }
+    }
+  }
+
+  if (modified) {
+    fs.writeFile(sessionsFile, JSON.stringify(subjects, null, 2), () => {});
+    console.log(`[AUTO-CLEANUP SUCCESS] sessions.json updated after deleting old videos.`);
+  }
+}
+
+// Execute cleanup routine on startup & run periodically every 1 hour
+cleanupOldRecordings();
+setInterval(cleanupOldRecordings, 60 * 60 * 1000);
+
 // REST API Endpoints
-app.get('/api/sessions', (req, res) => res.json({ success: true, sessions }));
+app.get('/api/subjects', (req, res) => {
+  cleanupOldRecordings();
+  res.json({ success: true, subjects });
+});
+
+app.get('/api/sessions', (req, res) => {
+  cleanupOldRecordings();
+  res.json({ success: true, sessions: subjects, subjects });
+});
+
+app.post('/api/create-subject', (req, res) => {
+  const { name, instructor } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ success: false, message: "Subject name is required." });
+  }
+
+  const cleanName = name.trim();
+  const id = cleanName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+  let existing = subjects.find(s => s.id === id || s.name.toLowerCase() === cleanName.toLowerCase());
+  if (!existing) {
+    existing = {
+      id: id,
+      name: cleanName,
+      instructor: instructor || "Prof. A. Sharma",
+      createdAt: new Date().toISOString(),
+      recordings: []
+    };
+    subjects.push(existing);
+    fs.writeFile(sessionsFile, JSON.stringify(subjects, null, 2), () => {});
+    console.log(`[NEW SUBJECT CREATED] Added subject class: ${cleanName} (${id})`);
+  }
+
+  return res.json({ success: true, subject: existing, subjects });
+});
+
+app.post('/api/upload-lecture', async (req, res) => {
+  try {
+    const { videoBase64, filename, subjectId, subjectName, githubToken, githubOwner, githubRepo } = req.body;
+
+    if (!videoBase64) {
+      return res.status(400).json({ success: false, message: "Missing videoBase64 data." });
+    }
+
+    const name = filename || `lecture-${Date.now()}.webm`;
+    const cleanBase64 = videoBase64.replace(/^data:video\/\w+;base64,/, "");
+    const token = githubToken || GITHUB_PAT;
+    const owner = githubOwner || GITHUB_OWNER;
+    const repo = githubRepo || GITHUB_REPO;
+
+    let videoUrl = "";
+    let uploadMethod = "";
+
+    if (token) {
+      console.log(`[GITHUB UPLOAD] Uploading ${name} to GitHub repo ${owner}/${repo}...`);
+      try {
+        const ghResult = await uploadToGitHub({
+          owner,
+          repo,
+          token,
+          pathInRepo: `recordings/${name}`,
+          base64Content: cleanBase64,
+          message: `feat: add recorded lecture ${name}`
+        });
+        videoUrl = ghResult.rawUrl || ghResult.downloadUrl;
+        uploadMethod = "GitHub Repository API";
+        console.log(`[GITHUB UPLOAD SUCCESS] Saved to GitHub: ${videoUrl}`);
+      } catch (ghErr) {
+        console.error(`[GITHUB UPLOAD FAILED] ${ghErr.message}. Falling back to local storage.`);
+      }
+    }
+
+    // Fallback to local server storage if no token or GitHub upload fails
+    if (!videoUrl) {
+      const recDir = path.join(PUBLIC_DIR, 'recordings');
+      if (!fs.existsSync(recDir)) {
+        fs.mkdirSync(recDir, { recursive: true });
+      }
+      const filePath = path.join(recDir, name);
+      fs.writeFileSync(filePath, Buffer.from(cleanBase64, 'base64'));
+      videoUrl = `/recordings/${name}`;
+      uploadMethod = "Local Server Storage";
+      console.log(`[LOCAL STORAGE SUCCESS] Saved to local disk: ${videoUrl}`);
+    }
+
+    // Find target subject class or create one dynamically
+    const targetSubId = subjectId || "cs101-recursion";
+    let targetSubject = subjects.find(s => s.id === targetSubId);
+    if (!targetSubject) {
+      targetSubject = {
+        id: targetSubId,
+        name: subjectName || "General Lecture",
+        instructor: "Prof. A. Sharma",
+        createdAt: new Date().toISOString(),
+        recordings: []
+      };
+      subjects.push(targetSubject);
+    }
+
+    const recCount = targetSubject.recordings.length + 1;
+    const formattedDate = new Date().toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+    // Append NEW recording entry (No overwriting!)
+    const recordingEntry = {
+      id: `rec-${Date.now()}`,
+      title: `Lecture Video ${recCount} (${formattedDate})`,
+      videoUrl: videoUrl,
+      uploadMethod: uploadMethod,
+      recordedAt: new Date().toISOString(),
+      formattedDate: formattedDate
+    };
+
+    targetSubject.recordings.push(recordingEntry);
+
+    // Save updated subjects to sessions.json
+    fs.writeFile(sessionsFile, JSON.stringify(subjects, null, 2), () => {});
+
+    return res.json({
+      success: true,
+      message: `Lecture video uploaded successfully via ${uploadMethod}`,
+      videoUrl: videoUrl,
+      uploadMethod: uploadMethod,
+      recording: recordingEntry,
+      subject: targetSubject
+    });
+
+  } catch (err) {
+    console.error("Upload API Error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 const server = http.createServer(app);
 
