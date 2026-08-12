@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🎓 Smart Classroom 2.0 — Live Low-Latency Learning Platform</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Header & Navigation Bar -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🎓</div>
+      <div>
+        <div class="brand-title">Smart Classroom 2.0</div>
+        <div class="brand-sub">Real-Time Low-Latency Streaming Platform</div>
+      </div>
+    </div>
+
+    <div class="nav-controls">
+      <!-- Session Room Selector -->
+      <div class="select-wrapper">
+        <select id="session-select">
+          <option value="cs101-recursion">CS101: Recursion & Binary Search Trees</option>
+          <option value="ee201-circuits">EE201: Operational Amplifiers & Feedback</option>
+          <option value="math301-calculus">MATH301: Differential Equations</option>
+        </select>
+      </div>
+
+      <!-- Language Selector -->
+      <div class="select-wrapper">
+        <select id="lang-select">
+          <option value="hi">🇮🇳 Hindi (हिंदी)</option>
+          <option value="bn">🇧🇩 Bengali (বাংলা)</option>
+          <option value="ar">🇸🇦 Arabic (العربية)</option>
+          <option value="es">🇪🇸 Spanish (Español)</option>
+          <option value="en">🇬🇧 English (Original)</option>
+        </select>
+      </div>
+
+      <!-- Action Buttons -->
+      <button id="tts-btn" class="btn-control" title="Toggle Text-to-Speech">🔊 TTS Off</button>
+      <button id="export-notes-btn" class="btn-control">📝 Export Notes</button>
+      <button id="export-vtt-btn" class="btn-control">📜 Download Subtitles</button>
+
+      <!-- Connection Status Badge -->
+      <div id="connection-badge" class="status-badge connecting">
+        <span class="pulse-dot"></span>
+        <span id="status-text">CONNECTING...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Split-Screen Workspace Grid -->
+  <main class="workspace-grid">
+    
+    <!-- Left Column: Interactive Whiteboard Canvas -->
+    <section class="panel-card">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span>🎨</span> Interactive Vector Whiteboard
+        </div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-muted);">
+          60 FPS Stream Engine
+        </div>
+      </div>
+
+      <div class="canvas-wrapper">
+        <div class="canvas-overlay-badge" id="canvas-status">🔴 LIVE SYNC</div>
+        <canvas id="whiteboard-canvas"></canvas>
+      </div>
+    </section>
+
+    <!-- Right Column: YouTube-Style Streaming Captions -->
+    <section class="panel-card">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span>🗣️</span> Live Streaming Captions & Translation
+        </div>
+        <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--accent-blue);">
+          Target In-Place Mutation
+        </div>
+      </div>
+
+      <!-- Live Caption Feed -->
+      <div id="caption-feed" class="caption-feed">
+        <!-- Caption cards generated dynamically in app.js -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Timeline Playback & Scrub Bar -->
+  <div class="timeline-bar">
+    <button id="play-btn" class="btn-control active">❚❚</button>
+    <div class="time-display">
+      <span id="current-time">00:00</span> / <span id="total-time">00:45</span>
+    </div>
+    <div class="slider-container">
+      <input type="range" id="timeline-slider" min="0" max="45" value="0" step="0.1">
+    </div>
+    <div class="select-wrapper">
+      <select id="speed-select">
+        <option value="0.5">0.5x</option>
+        <option value="1" selected>1.0x</option>
+        <option value="1.5">1.5x</option>
+        <option value="2">2.0x</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Real-Time Debug Console -->
+  <div id="debug-console" class="debug-console">
+    <div class="debug-log-line">[SYSTEM] Smart Classroom 2.0 Client Initialized.</div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

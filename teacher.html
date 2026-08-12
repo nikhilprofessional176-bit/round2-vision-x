@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>👨‍🏫 Teacher Live Control Panel & Whiteboard — Smart Classroom 2.0</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap');
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #060911;
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #38bdf8;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      padding: 6px 14px;
+      border-radius: 20px;
+      background: rgba(56, 189, 248, 0.1);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      color: #38bdf8;
+    }
+
+    .main-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 20px;
+      flex: 1;
+    }
+
+    .panel {
+      background: rgba(16, 23, 38, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 16px;
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .canvas-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .tool-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    label { font-size: 0.85rem; color: #94a3b8; }
+    input[type="color"] { border: none; background: none; width: 32px; height: 32px; cursor: pointer; }
+    
+    select, button {
+      background: #1e293b;
+      color: #f8fafc;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    button:hover { background: #38bdf8; color: #090d16; }
+
+    button.mic-btn {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff;
+      font-size: 0.88rem;
+      padding: 10px 14px;
+      border: none;
+    }
+    button.mic-btn.recording {
+      background: #f43f5e;
+      animation: pulse-mic 1s infinite alternate;
+    }
+
+    button.pcm-btn {
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      color: #fff;
+      font-size: 0.88rem;
+      padding: 10px 14px;
+      border: none;
+    }
+    button.pcm-btn.recording {
+      background: #f43f5e;
+      animation: pulse-mic 1s infinite alternate;
+    }
+
+    @keyframes pulse-mic {
+      from { box-shadow: 0 0 5px rgba(244, 63, 94, 0.4); }
+      to { box-shadow: 0 0 20px rgba(244, 63, 94, 0.8); }
+    }
+
+    canvas {
+      flex: 1;
+      width: 100%;
+      min-height: 450px;
+      background: #04060c;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      cursor: crosshair;
+    }
+
+    .panel-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #38bdf8;
+      margin-bottom: 10px;
+    }
+
+    textarea {
+      width: 100%;
+      height: 80px;
+      background: #090d16;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 10px;
+      color: #fff;
+      font-family: inherit;
+      resize: none;
+      margin-bottom: 10px;
+      outline: none;
+    }
+    textarea:focus { border-color: #38bdf8; }
+
+    .log-box {
+      flex: 1;
+      background: #04060c;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      padding: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: #10b981;
+      overflow-y: auto;
+      max-height: 200px;
+    }
+
+    .log-entry { margin-bottom: 4px; opacity: 0.9; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="title">
+      <span>👨‍🏫</span> Teacher Live Control Panel & Whiteboard
+    </div>
+    <div id="ws-status" class="status-badge">📡 CONNECTING...</div>
+  </header>
+
+  <div class="main-grid">
+    <!-- Left Column: Interactive Whiteboard Canvas -->
+    <div class="panel">
+      <div class="canvas-toolbar">
+        <div class="tool-group">
+          <label>Pen Color:</label>
+          <input type="color" id="color-picker" value="#38bdf8">
+
+          <label>Size:</label>
+          <select id="size-picker">
+            <option value="2">Thin (2px)</option>
+            <option value="4" selected>Medium (4px)</option>
+            <option value="8">Thick (8px)</option>
+          </select>
+        </div>
+
+        <div class="tool-group">
+          <button id="clear-btn">🧹 Clear Canvas</button>
+        </div>
+      </div>
+
+      <canvas id="teacher-canvas"></canvas>
+    </div>
+
+    <!-- Right Column: Dual ASR Engine Speech Streaming -->
+    <div class="panel">
+      <div class="panel-title">⚡ Real-Time Speech Capture Engines</div>
+      
+      <!-- Option A: Studio PCM Audio Streaming (99% Accuracy) -->
+      <div style="margin-bottom: 12px;">
+        <button id="pcm-toggle-btn" class="pcm-btn" style="width: 100%;">
+          🎙️ Studio PCM AI Stream (99% Deepgram Nova-2)
+        </button>
+      </div>
+
+      <!-- Option B: Browser Web Speech API -->
+      <div style="margin-bottom: 12px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+          <label style="font-size:0.78rem;">Mic Accent:</label>
+          <select id="mic-lang-select" style="flex: 1; padding: 4px 8px;">
+            <option value="en-IN" selected>🇮🇳 English (India) / Hinglish</option>
+            <option value="hi-IN">🇮🇳 Hindi (हिंदी)</option>
+            <option value="en-US">🇺🇸 English (US)</option>
+          </select>
+        </div>
+        <button id="mic-toggle-btn" class="mic-btn" style="width: 100%;">
+          🌐 Web Speech API (Browser Fallback)
+        </button>
+      </div>
+
+      <div class="panel-title" style="margin-top: 5px;">💬 Manual Broadcast</div>
+      <textarea id="caption-input" placeholder="Type text here and click broadcast to send simulated speech captions..."></textarea>
+      <button id="send-caption-btn">📡 Broadcast Caption</button>
+
+      <div class="panel-title" style="margin-top: 12px;">📜 Real-Time Broadcast Log</div>
+      <div id="log-box" class="log-box">
+        <div class="log-entry">[SYSTEM] Studio Deepgram Nova-2 & WebSpeech Dual-Engine Ready.</div>
+      </div>
+    </div>
+  </div>
+
+  <script src="teacher.js"></script>
+</body>
+</html>

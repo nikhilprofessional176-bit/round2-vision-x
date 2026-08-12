@@ -1,0 +1,24 @@
+[
+  {
+    "id": "cs101-recursion",
+    "title": "CS101: Recursion & Binary Search Trees",
+    "instructor": "Prof. A. Sharma",
+    "course": "Computer Science 101",
+    "date": "Today (Live Session)",
+    "isLive": true,
+    "durationSeconds": 45,
+    "technicalTerms": ["recursion", "base case", "call stack", "binary search tree", "root node", "leaf node"],
+    "segments": []
+  },
+  {
+    "id": "ee201-circuits",
+    "title": "EE201: Operational Amplifiers & Feedback",
+    "instructor": "Prof. R. Varma",
+    "course": "Electrical Engineering",
+    "date": "Yesterday",
+    "isLive": false,
+    "durationSeconds": 60,
+    "technicalTerms": ["op-amp", "feedback loop", "gain", "impedance"],
+    "segments": []
+  }
+]
