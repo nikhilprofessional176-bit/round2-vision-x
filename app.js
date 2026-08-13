@@ -336,7 +336,7 @@ class SmartClassroomStudentApp {
 
     // IBM Granite 3.0 Notes Modal Listeners
     if (this.exportNotesBtn) {
-      this.exportNotesBtn.addEventListener("click", () => this.generateAndOpenGraniteNotes());
+      this.exportNotesBtn.addEventListener("click", () => this.openInteractiveNotesModal());
     }
 
     if (this.closeNotesModalBtn) {
@@ -1848,7 +1848,7 @@ class SmartClassroomStudentApp {
     }
   }
 
-  async generateAndOpenGraniteNotes() {
+  openInteractiveNotesModal() {
     this.notesModal = this.notesModal || document.getElementById("notes-modal");
     this.notesContentBody = this.notesContentBody || document.getElementById("notes-content-body");
 
@@ -1856,47 +1856,77 @@ class SmartClassroomStudentApp {
       this.notesModal.style.display = "flex";
     }
 
-    // Switch to lecture tab when opened from the export button
     this._switchNotesTab("lecture");
+    this.renderPersonalNotesList();
 
     if (!this.notesContentBody) return;
 
-    const targetLang = this.langSelect ? this.langSelect.value : "hi";
-    const title = this.currentLecture ? this.currentLecture.title : "Smart Classroom Lecture";
-    const sub = this.currentLecture ? this.currentLecture.subject : "Computer Science Core";
+    const lang = this.currentLanguage || "en";
+    const targetLangName = this.langSelect ? this.langSelect.options[this.langSelect.selectedIndex].text : "Hindi";
+    const segs = this.currentLecture ? this.currentLecture.segments : [];
+    const snapshotUrl = this.captureWhiteboardSnapshot();
 
-    this.notesContentBody.innerHTML = `
-      <div style="text-align: center; padding: 40px; color: #38bdf8;">
-        <div style="font-size: 2.2rem; margin-bottom: 12px; animation: pulse 1s infinite;">🤖</div>
-        <div style="font-weight: 700; font-size: 1.1rem; margin-bottom: 6px;">Generating Personalized Study Guide & Revision Notes...</div>
-        <div style="font-size: 0.82rem; color: #94a3b8;">IBM Granite 3.0 Model (ibm-granite/granite-3.0-8b-instruct) is processing lecture transcripts & whiteboard context...</div>
+    // Extract domain technical terms
+    const techTermsSet = new Set();
+    const termsRegex = /(recursion|base case|call stack|stack overflow|binary search|binary search tree|tree|graph|algorithm|time complexity|O\(log N\)|O\(N\)|O\(1\)|function|node|data structure)/gi;
+    
+    segs.forEach(s => {
+      const matches = (s.englishText || "").match(termsRegex);
+      if (matches) matches.forEach(m => techTermsSet.add(m.toLowerCase()));
+    });
+    const techTerms = Array.from(techTermsSet);
+
+    let html = `
+      <div style="font-family: 'Inter', sans-serif;">
+        <!-- Header -->
+        <div style="border-bottom: 2px solid rgba(56,189,248,0.3); padding-bottom: 12px; margin-bottom: 16px;">
+          <h2 style="color: #38bdf8; font-size: 1.25rem; font-weight: 800; margin: 0 0 4px 0;">🎓 ${this.escapeHTML(this.currentLecture.title)}</h2>
+          <div style="font-size: 0.78rem; color: #94a3b8; display: flex; gap: 14px; flex-wrap: wrap;">
+            <span>👨‍🏫 <strong>Instructor:</strong> ${this.escapeHTML(this.currentLecture.instructor || "Prof. A. Sharma")}</span>
+            <span>📚 <strong>Subject:</strong> ${this.escapeHTML(this.currentLecture.subject || "Computer Science")}</span>
+            <span>🌐 <strong>Language:</strong> ${this.escapeHTML(targetLangName)}</span>
+          </div>
+        </div>
+
+        <!-- Section 1: Domain Technical Terms Index -->
+        <div style="margin-bottom: 18px;">
+          <div style="font-size: 0.85rem; font-weight: 700; color: #f8fafc; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">📌 Key Technical Terms Index</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+            ${techTerms.length > 0 ? techTerms.map(t => `<span style="background: rgba(56,189,248,0.15); color: #38bdf8; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; border: 1px solid rgba(56,189,248,0.3);">🔑 ${this.escapeHTML(t)}</span>`).join('') : '<span style="background: rgba(56,189,248,0.15); color: #38bdf8; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; border: 1px solid rgba(56,189,248,0.3);">recursion</span><span style="background: rgba(56,189,248,0.15); color: #38bdf8; padding: 3px 8px; border-radius: 6px; font-size: 0.76rem; font-weight: 700; border: 1px solid rgba(56,189,248,0.3);">base case</span>'}
+          </div>
+        </div>
+
+        <!-- Section 2: Canvas Snapshot -->
+        ${snapshotUrl ? `
+          <div style="margin-bottom: 18px;">
+            <div style="font-size: 0.85rem; font-weight: 700; color: #f8fafc; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">🖼️ Interactive Whiteboard Canvas Snapshot</div>
+            <div style="background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px; text-align: center;">
+              <img src="${snapshotUrl}" style="max-width: 100%; max-height: 240px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.15);" alt="Canvas Snapshot"/>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- Section 3: Dual-Column Lecture Transcript -->
+        <div>
+          <div style="font-size: 0.85rem; font-weight: 700; color: #f8fafc; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;">📖 Structured Dual-Language Lecture Transcript</div>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${segs.map(s => `
+              <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 8px 12px; font-size: 0.82rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px;">
+                  <span style="font-family: monospace; font-weight: 700; color: #38bdf8; background: rgba(56,189,248,0.15); padding: 1px 6px; border-radius: 4px; font-size: 0.72rem;">⏱️ [${this.formatTime(s.startTime)}]</span>
+                  <span style="font-size: 0.7rem; color: #64748b;">${s.status === "partial" ? "LIVE STREAMING" : "FINAL"}</span>
+                </div>
+                <div style="color: #f8fafc; font-weight: 600; font-size: 0.86rem;">${this.escapeHTML(s.translations[lang] || s.englishText || '')}</div>
+                ${lang !== "en" ? `<div style="color: #94a3b8; font-size: 0.76rem; margin-top: 2px;">Original: ${this.escapeHTML(s.englishText || '')}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
       </div>
     `;
 
-    try {
-      const res = await fetch('/api/generate-granite-notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionTitle: title,
-          subjectName: sub,
-          transcripts: this.captions || [],
-          targetLang: targetLang
-        })
-      });
-
-      const data = await res.json();
-      if (data && data.success && data.notesMarkdown) {
-        this.lastGeneratedMarkdown = data.notesMarkdown;
-        this.notesContentBody.innerHTML = this.renderMarkdownToHTML(data.notesMarkdown);
-        this.logDebug("GRANITE-AI", `Generated personalized notes with IBM Granite 3.0 Model`);
-        return;
-      }
-    } catch (e) {
-      console.log("Granite Notes Generation Error:", e);
-    }
-
-    this.notesContentBody.innerHTML = `<div style="color: #f87171; text-align: center; padding: 20px;">Failed to generate notes with IBM Granite Model. Please try again.</div>`;
+    this.notesContentBody.innerHTML = html;
+    this.logDebug("NOTES", "Rendered interactive structured notes modal");
   }
 
   // =========================================================================
