@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: smart-classroom-platform
+    env: node
+    plan: free
+    buildCommand: cd server && npm install
+    startCommand: cd server && node server.js
+    envVars:
+      - key: PORT
+        value: 5000
+      - key: NODE_ENV
+        value: production
+      - key: CEREBRAS_API_KEY
+        value: csk-dh6hd8t5ej6dkyy6ywjpywxyy455r4cje59e5tcdf2tm9med

@@ -1,0 +1,19 @@
+{
+  "name": "smart-classroom-platform",
+  "version": "2.0.0",
+  "description": "Smart Classroom 2.0 Web-Based Low-Latency Live Streaming & AI Platform",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "postinstall": "cd server && npm install"
+  },
+  "dependencies": {
+    "body-parser": "^1.20.2",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "ws": "^8.13.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
