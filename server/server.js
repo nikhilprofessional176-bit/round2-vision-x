@@ -41,7 +41,7 @@ try {
   if (fs.existsSync(sessionsFile)) {
     subjects = JSON.parse(fs.readFileSync(sessionsFile, 'utf8'));
   }
-} catch (e) {}
+} catch (e) { }
 
 if (!subjects || subjects.length === 0) {
   subjects = [
@@ -142,7 +142,7 @@ async function uploadToGitHub({ owner, repo, token, pathInRepo, base64Content, m
               downloadUrl: parsed.content ? parsed.content.download_url : null,
               rawUrl: `https://raw.githubusercontent.com/${owner}/${repo}/main/${pathInRepo}`
             });
-          } catch(e) {
+          } catch (e) {
             resolve({ success: true, rawUrl: `https://raw.githubusercontent.com/${owner}/${repo}/main/${pathInRepo}` });
           }
         } else {
@@ -176,7 +176,7 @@ async function deleteFromGitHub({ owner, repo, token, pathInRepo }) {
         try {
           const parsed = JSON.parse(body);
           resolve(parsed.sha || null);
-        } catch(e) { resolve(null); }
+        } catch (e) { resolve(null); }
       });
     });
     req.on('error', () => resolve(null));
@@ -257,7 +257,7 @@ async function cleanupOldRecordings() {
   }
 
   if (modified) {
-    fs.writeFile(sessionsFile, JSON.stringify(subjects, null, 2), () => {});
+    fs.writeFile(sessionsFile, JSON.stringify(subjects, null, 2), () => { });
     console.log(`[AUTO-CLEANUP SUCCESS] sessions.json updated after deleting old videos.`);
   }
 }
@@ -296,7 +296,7 @@ app.post('/api/create-subject', (req, res) => {
       recordings: []
     };
     subjects.push(existing);
-    fs.writeFile(sessionsFile, JSON.stringify(subjects, null, 2), () => {});
+    fs.writeFile(sessionsFile, JSON.stringify(subjects, null, 2), () => { });
     console.log(`[NEW SUBJECT CREATED] Added subject class: ${cleanName} (${id})`);
   }
 
@@ -392,7 +392,7 @@ app.post('/api/upload-lecture', async (req, res) => {
     targetSubject.recordings.push(recordingEntry);
 
     // Save updated subjects to sessions.json
-    fs.writeFile(sessionsFile, JSON.stringify(subjects, null, 2), () => {});
+    fs.writeFile(sessionsFile, JSON.stringify(subjects, null, 2), () => { });
 
     return res.json({
       success: true,
@@ -453,6 +453,87 @@ Be encouraging, beginner-friendly, and provide a clear step-by-step or real-worl
   // 2. High-Precision Smart Concept Engine
   const explanation = generateSmartAIExplanation(query, captionText, timeStr);
   return res.json({ success: true, answer: explanation, engine: 'Smart Classroom Real-Time AI Engine' });
+});
+
+// =========================================================================
+// Student Authentication Engine (JSON Store + csjmu Code Verification)
+// =========================================================================
+const STUDENTS_FILE = path.join(__dirname, 'students_db.json');
+let registeredStudents = [
+  { id: "std-001", name: "Demo Student", email: "student@gmail.com", password: "password123", rollNumber: "CS-101", studentCode: "csjmu" }
+];
+
+if (fs.existsSync(STUDENTS_FILE)) {
+  try {
+    registeredStudents = JSON.parse(fs.readFileSync(STUDENTS_FILE, 'utf8'));
+  } catch(e) {}
+}
+
+function saveStudentsDB() {
+  try {
+    fs.writeFileSync(STUDENTS_FILE, JSON.stringify(registeredStudents, null, 2));
+  } catch(e) {}
+}
+
+app.post('/api/auth/signup', (req, res) => {
+  const { name, email, password, rollNumber, studentCode } = req.body;
+
+  if (!name || !email || !password || !studentCode) {
+    return res.status(400).json({ success: false, message: "All fields including Student Code are required!" });
+  }
+
+  // Mandatory Student Code Verification: must be "csjmu"
+  if (studentCode.trim().toLowerCase() !== "csjmu") {
+    return res.status(400).json({ success: false, message: "Invalid Student Code! Please enter student code 'csjmu'." });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const existing = registeredStudents.find(s => s.email.toLowerCase() === cleanEmail);
+  if (existing) {
+    return res.status(400).json({ success: false, message: "Student account with this email already exists!" });
+  }
+
+  const newStudent = {
+    id: `std-${Date.now()}`,
+    name: name.trim(),
+    email: cleanEmail,
+    password: password,
+    rollNumber: rollNumber ? rollNumber.trim() : `CS-${Math.floor(100 + Math.random()*900)}`,
+    studentCode: studentCode.trim(),
+    createdAt: new Date().toISOString()
+  };
+
+  registeredStudents.push(newStudent);
+  saveStudentsDB();
+
+  const token = `token-${newStudent.id}-${Date.now()}`;
+  return res.json({
+    success: true,
+    message: "Student account created successfully!",
+    token: token,
+    user: { id: newStudent.id, name: newStudent.name, email: newStudent.email, rollNumber: newStudent.rollNumber }
+  });
+});
+
+app.post('/api/auth/login', (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ success: false, message: "Registered Gmail and password are required!" });
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const student = registeredStudents.find(s => s.email.toLowerCase() === cleanEmail && s.password === password);
+  if (!student) {
+    return res.status(401).json({ success: false, message: "Invalid registered Gmail or password!" });
+  }
+
+  const token = `token-${student.id}-${Date.now()}`;
+  return res.json({
+    success: true,
+    message: "Login successful!",
+    token: token,
+    user: { id: student.id, name: student.name, email: student.email, rollNumber: student.rollNumber }
+  });
 });
 
 function generateSmartAIExplanation(query, captionText, timeStr) {
@@ -759,7 +840,7 @@ if (WebSocketServer) {
         // Assign Sequence Number and Event ID
         state.sequenceNumber++;
         data.sequenceNumber = state.sequenceNumber;
-        data.eventId = data.eventId || `evt-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+        data.eventId = data.eventId || `evt-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
         data.sessionId = sessionId;
 
         // Store in Circular Buffer (max 500 events)
@@ -813,7 +894,7 @@ if (WebSocketServer) {
 function processAsyncTranslation(sessionId, captionData) {
   setTimeout(() => {
     const text = captionData.sourceText || "";
-    
+
     ["hi", "bn", "ar", "es"].forEach(lang => {
       const translatedText = DICTIONARY[lang] && DICTIONARY[lang][text]
         ? DICTIONARY[lang][text]

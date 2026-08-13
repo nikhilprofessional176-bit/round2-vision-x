@@ -80,7 +80,7 @@ class TeacherControlPanel {
   setupCanvas() {
     const rect = this.canvas.parentElement.getBoundingClientRect();
     this.canvas.width = rect.width || 800;
-    this.canvas.height = 450;
+    this.canvas.height = rect.height || 450;
     this.ctx.lineCap = "round";
     this.ctx.lineJoin = "round";
     this.redrawCanvas();
@@ -90,16 +90,20 @@ class TeacherControlPanel {
     const rect = this.canvas.getBoundingClientRect();
     const canvasX = screenX - rect.left;
     const canvasY = screenY - rect.top;
+    const scaleX = 1920 / (this.canvas.width || 1);
+    const scaleY = 1080 / (this.canvas.height || 1);
     return {
-      x: (canvasX - this.panX) / this.zoom,
-      y: (canvasY - this.panY) / this.zoom
+      x: ((canvasX - this.panX) / this.zoom) * scaleX,
+      y: ((canvasY - this.panY) / this.zoom) * scaleY
     };
   }
 
   worldToScreen(worldX, worldY) {
+    const scaleX = (this.canvas.width || 1) / 1920;
+    const scaleY = (this.canvas.height || 1) / 1080;
     return {
-      x: worldX * this.zoom + this.panX,
-      y: worldY * this.zoom + this.panY
+      x: (worldX * scaleX) * this.zoom + this.panX,
+      y: (worldY * scaleY) * this.zoom + this.panY
     };
   }
 

@@ -32,7 +32,7 @@ const DEMO_SESSIONS = [
 ];
 
 const TECHNICAL_TERMS = [
-  "recursion", "base case", "call stack", "binary search tree", "root node", 
+  "recursion", "base case", "call stack", "binary search tree", "root node",
   "leaf node", "pointer", "memory", "algorithm", "binary search"
 ];
 
@@ -46,10 +46,10 @@ class SmartClassroomStudentApp {
     this.isTTSOn = false;
     this.playbackSpeed = 1;
     this.activeSegmentId = null;
-    
+
     // Live Real-Time Vector Strokes Array
     this.liveStrokes = [];
-    
+
     // WebSocket & Sequence State
     this.ws = null;
     this.highestSequenceNumberReceived = 0;
@@ -57,7 +57,7 @@ class SmartClassroomStudentApp {
     this.reconnectTimer = null;
     this.pingInterval = null;
     this.segmentsMap = new Map(); // Key: segmentId -> segment object
-    
+
     // DOM Cache
     this.canvas = document.getElementById("whiteboard-canvas");
     this.ctx = this.canvas.getContext("2d");
@@ -83,6 +83,19 @@ class SmartClassroomStudentApp {
     this.downloadNotesPdfBtn = document.getElementById("download-notes-pdf-btn");
     this.copyNotesBtn = document.getElementById("copy-notes-btn");
     this.lastGeneratedMarkdown = "";
+
+    // Student Authentication DOM Cache & State
+    this.authModal = document.getElementById("auth-modal");
+    this.profileContainer = document.getElementById("student-profile-container");
+    this.authTabLogin = document.getElementById("auth-tab-login");
+    this.authTabSignup = document.getElementById("auth-tab-signup");
+    this.loginForm = document.getElementById("login-form");
+    this.signupForm = document.getElementById("signup-form");
+    this.authErrorMsg = document.getElementById("auth-error-msg");
+
+    this.currentStudent = null;
+    this.checkStudentSession();
+    this.setupAuthListeners();
 
     // Recorded Lectures Modal DOM Cache
     this.recordingsBtn = document.getElementById("recordings-btn");
@@ -126,7 +139,7 @@ class SmartClassroomStudentApp {
     this.aiChatForm = document.getElementById("ai-chat-form");
     this.aiChatInput = document.getElementById("ai-chat-input");
     this.aiContextBadge = document.getElementById("ai-context-badge");
-    
+
     this.activeVideoCaptions = [];
     this.activeSubLang = "en";
     this.subTranslationCache = new Map();
@@ -390,7 +403,7 @@ class SmartClassroomStudentApp {
         this.reconnectAttempts = 0;
         this.updateConnectionState("live", `LIVE: ${this.currentSessionId}`);
         this.logDebug("WS", "WebSocket connection open. Subscribing...");
-        
+
         // Send subscribe request with sequence number for recovery
         this.ws.send(JSON.stringify({
           type: "subscribe",
@@ -430,8 +443,8 @@ class SmartClassroomStudentApp {
     if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
     this.reconnectAttempts++;
     const delay = Math.min(1000 * Math.pow(1.5, this.reconnectAttempts), 10000);
-    this.logDebug("RECONNECT", `Retrying in ${Math.round(delay/1000)}s (Attempt ${this.reconnectAttempts})`);
-    
+    this.logDebug("RECONNECT", `Retrying in ${Math.round(delay / 1000)}s (Attempt ${this.reconnectAttempts})`);
+
     this.reconnectTimer = setTimeout(() => {
       this.connectWebSocket();
     }, delay);
@@ -563,7 +576,7 @@ class SmartClassroomStudentApp {
       card = document.createElement("div");
       card.id = `card-${seg.id}`;
       card.className = `caption-card ${seg.status === "partial" ? "partial" : ""}`;
-      
+
       card.innerHTML = `
         <div class="caption-meta">
           <span class="caption-time">⏱️ ${timeLabel}</span>
@@ -645,9 +658,11 @@ class SmartClassroomStudentApp {
   }
 
   worldToScreen(worldX, worldY) {
+    const scaleX = (this.canvasWidth || 1) / 1920;
+    const scaleY = (this.canvasHeight || 1) / 1080;
     return {
-      x: worldX * this.zoom + this.panX,
-      y: worldY * this.zoom + this.panY
+      x: (worldX * scaleX) * this.zoom + this.panX,
+      y: (worldY * scaleY) * this.zoom + this.panY
     };
   }
 
@@ -688,9 +703,9 @@ class SmartClassroomStudentApp {
     this.ctx.lineJoin = "round";
 
     stroke.points.forEach((p, idx) => {
-      // Support both normalized (0..1) legacy points and new world space points
-      const worldX = (p.x <= 1 && p.x >= 0) ? p.x * this.canvasWidth : p.x;
-      const worldY = (p.y <= 1 && p.y >= 0) ? p.y * this.canvasHeight : p.y;
+      // Support legacy normalized 0..1 points, 1920x1080 canonical points, and legacy raw screen points
+      const worldX = (p.x <= 1 && p.x >= 0) ? p.x * 1920 : p.x;
+      const worldY = (p.y <= 1 && p.y >= 0) ? p.y * 1080 : p.y;
       const screenPt = this.worldToScreen(worldX, worldY);
 
       if (idx === 0) this.ctx.moveTo(screenPt.x, screenPt.y);
@@ -909,12 +924,12 @@ class SmartClassroomStudentApp {
     this.activeVideoCaptions = (recordingObj && recordingObj.captions && recordingObj.captions.length > 0)
       ? recordingObj.captions
       : [
-          { id: "c1", startTime: 0, endTime: 4, text: "Welcome to this recorded lecture session!" },
-          { id: "c2", startTime: 4, endTime: 10, text: "Today we will analyze key core computer science concepts and architectural design." },
-          { id: "c3", startTime: 10, endTime: 18, text: "Pay close attention to how algorithm efficiency optimizes execution speed." },
-          { id: "c4", startTime: 18, endTime: 26, text: "Let us trace the step-by-step vector diagram on the interactive whiteboard." },
-          { id: "c5", startTime: 26, endTime: 40, text: "Feel free to pause, rewind, or switch subtitle languages at any time!" }
-        ];
+        { id: "c1", startTime: 0, endTime: 4, text: "Welcome to this recorded lecture session!" },
+        { id: "c2", startTime: 4, endTime: 10, text: "Today we will analyze key core computer science concepts and architectural design." },
+        { id: "c3", startTime: 10, endTime: 18, text: "Pay close attention to how algorithm efficiency optimizes execution speed." },
+        { id: "c4", startTime: 18, endTime: 26, text: "Let us trace the step-by-step vector diagram on the interactive whiteboard." },
+        { id: "c5", startTime: 26, endTime: 40, text: "Feel free to pause, rewind, or switch subtitle languages at any time!" }
+      ];
 
     if (this.videoCaptionOverlay) this.videoCaptionOverlay.style.display = "none";
     this.currentActiveSegId = null;
@@ -966,7 +981,7 @@ class SmartClassroomStudentApp {
       if (this.currentActiveSegId === activeSeg.id) {
         this.ytCaptionText.textContent = translated;
       }
-    } catch(e) {
+    } catch (e) {
       console.log("Subtitle Translation Error:", e);
     }
   }
@@ -1020,7 +1035,7 @@ class SmartClassroomStudentApp {
       if (data && data.responseData && data.responseData.translatedText) {
         return data.responseData.translatedText;
       }
-    } catch(e) {}
+    } catch (e) { }
 
     return text;
   }
@@ -1166,7 +1181,7 @@ class SmartClassroomStudentApp {
     if (targetLang === "en") return rawEnglishExplanation;
     try {
       return await this.translateTextAsync(rawEnglishExplanation, targetLang);
-    } catch(e) {
+    } catch (e) {
       return rawEnglishExplanation;
     }
   }
@@ -1212,7 +1227,7 @@ class SmartClassroomStudentApp {
         this.logDebug("GRANITE-AI", `Generated personalized notes with IBM Granite 3.0 Model`);
         return;
       }
-    } catch(e) {
+    } catch (e) {
       console.log("Granite Notes Generation Error:", e);
     }
 
@@ -1267,6 +1282,177 @@ class SmartClassroomStudentApp {
     alert("📑 IBM Granite 3.0 Study Notes Markdown copied to clipboard!");
   }
 
+  // =========================================================================
+  // Student Authentication Engine (JSON Store & CSJMU Code Verification)
+  // =========================================================================
+  checkStudentSession() {
+    const saved = localStorage.getItem("student_user");
+    if (saved) {
+      try {
+        this.currentStudent = JSON.parse(saved);
+        this.renderStudentProfile();
+        return;
+      } catch(e) {}
+    }
+    this.renderStudentProfile();
+  }
+
+  openAuthModal() {
+    this.authModal = this.authModal || document.getElementById("auth-modal");
+    if (this.authModal) {
+      this.authModal.style.display = "flex";
+    }
+  }
+
+  closeAuthModal() {
+    this.authModal = this.authModal || document.getElementById("auth-modal");
+    if (this.authModal) {
+      this.authModal.style.display = "none";
+    }
+  }
+
+  renderStudentProfile() {
+    if (!this.profileContainer) return;
+    if (this.currentStudent) {
+      this.profileContainer.innerHTML = `
+        <div style="background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.35); color: #38bdf8; padding: 5px 12px; border-radius: 8px; font-size: 0.78rem; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+          <span>🎓 ${this.currentStudent.name}</span>
+          <span style="opacity: 0.75; font-size: 0.7rem; color: #94a3b8;">(${this.currentStudent.rollNumber || 'CS-101'})</span>
+        </div>
+        <button id="logout-btn" class="btn-control" style="padding: 5px 10px; font-size: 0.75rem; background: rgba(244,63,94,0.2); color: #f43f5e; border: 1px solid rgba(244,63,94,0.3); border-radius: 8px;">Logout</button>
+      `;
+      const logoutBtn = document.getElementById("logout-btn");
+      if (logoutBtn) {
+        logoutBtn.addEventListener("click", () => this.handleLogout());
+      }
+    } else {
+      this.profileContainer.innerHTML = `
+        <button id="student-auth-btn" class="btn-control" style="background: linear-gradient(135deg, #0284c7, #38bdf8); color: #000; font-weight: 700; border: none; border-radius: 8px; padding: 7px 14px; font-size: 0.8rem; cursor: pointer;">👤 Student Login</button>
+      `;
+      const authBtn = document.getElementById("student-auth-btn");
+      if (authBtn) {
+        authBtn.addEventListener("click", () => this.openAuthModal());
+      }
+    }
+  }
+
+  handleLogout() {
+    localStorage.removeItem("student_user");
+    localStorage.removeItem("student_token");
+    this.currentStudent = null;
+    this.renderStudentProfile();
+    this.logDebug("AUTH", "Student logged out");
+  }
+
+  setupAuthListeners() {
+    if (this.authTabLogin) {
+      this.authTabLogin.addEventListener("click", () => {
+        this.authTabLogin.style.background = "#38bdf8";
+        this.authTabLogin.style.color = "#000";
+        this.authTabSignup.style.background = "transparent";
+        this.authTabSignup.style.color = "#94a3b8";
+        this.loginForm.style.display = "flex";
+        this.signupForm.style.display = "none";
+        if (this.authErrorMsg) this.authErrorMsg.style.display = "none";
+      });
+    }
+
+    if (this.authTabSignup) {
+      this.authTabSignup.addEventListener("click", () => {
+        this.authTabSignup.style.background = "#a855f7";
+        this.authTabSignup.style.color = "#fff";
+        this.authTabLogin.style.background = "transparent";
+        this.authTabLogin.style.color = "#94a3b8";
+        this.loginForm.style.display = "none";
+        this.signupForm.style.display = "flex";
+        if (this.authErrorMsg) this.authErrorMsg.style.display = "none";
+      });
+    }
+
+    if (this.loginForm) {
+      this.loginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const email = document.getElementById("login-email").value;
+        const password = document.getElementById("login-password").value;
+
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+          });
+          const data = await res.json();
+          if (data.success && data.user) {
+            this.currentStudent = data.user;
+            localStorage.setItem("student_user", JSON.stringify(data.user));
+            localStorage.setItem("student_token", data.token);
+            this.renderStudentProfile();
+            if (this.authModal) this.authModal.style.display = "none";
+            this.logDebug("AUTH", `Student ${data.user.name} logged in!`);
+          } else {
+            this.showAuthError(data.message || "Invalid Gmail or password!");
+          }
+        } catch(err) {
+          this.showAuthError("Server connection error!");
+        }
+      });
+    }
+
+    if (this.signupForm) {
+      this.signupForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const name = document.getElementById("signup-name").value;
+        const email = document.getElementById("signup-email").value;
+        const studentCode = document.getElementById("signup-code") ? document.getElementById("signup-code").value : "";
+        const rollNumber = document.getElementById("signup-roll").value;
+        const password = document.getElementById("signup-password").value;
+
+        if (studentCode.trim().toLowerCase() !== "csjmu") {
+          this.showAuthError("Invalid Student Code! Use code 'csjmu'.");
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/auth/signup', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, email, studentCode, rollNumber, password })
+          });
+          const data = await res.json();
+          if (data.success && data.user) {
+            this.currentStudent = data.user;
+            localStorage.setItem("student_user", JSON.stringify(data.user));
+            localStorage.setItem("student_token", data.token);
+            this.renderStudentProfile();
+            if (this.authModal) this.authModal.style.display = "none";
+            this.logDebug("AUTH", `Account Created for ${data.user.name} with CSJMU Verification!`);
+          } else {
+            this.showAuthError(data.message || "Signup failed!");
+          }
+        } catch(err) {
+          this.showAuthError("Server connection error!");
+        }
+      });
+    }
+
+    const closeBtn = document.getElementById("close-auth-modal-btn");
+    if (closeBtn) {
+      closeBtn.addEventListener("click", () => this.closeAuthModal());
+    }
+
+    if (this.authModal) {
+      this.authModal.addEventListener("click", (e) => {
+        if (e.target === this.authModal) this.closeAuthModal();
+      });
+    }
+  }
+
+  showAuthError(msg) {
+    if (!this.authErrorMsg) return;
+    this.authErrorMsg.textContent = msg;
+    this.authErrorMsg.style.display = "block";
+  }
+
   logDebug(tag, msg) {
     const line = document.createElement("div");
     line.className = "debug-log-line";
@@ -1275,6 +1461,16 @@ class SmartClassroomStudentApp {
     this.debugConsole.scrollTop = this.debugConsole.scrollHeight;
   }
 }
+
+window.openStudentAuthModal = function() {
+  const modal = document.getElementById("auth-modal");
+  if (modal) modal.style.display = "flex";
+};
+
+window.closeStudentAuthModal = function() {
+  const modal = document.getElementById("auth-modal");
+  if (modal) modal.style.display = "none";
+};
 
 // Initialize Application when DOM ready
 document.addEventListener("DOMContentLoaded", () => {
