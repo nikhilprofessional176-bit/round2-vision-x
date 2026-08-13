@@ -101,6 +101,12 @@ class SmartClassroomStudentApp {
     this.studentZoomBadge = document.getElementById("student-zoom-badge");
     this.studentPanCoords = document.getElementById("student-pan-coords");
 
+    // Live Class AI Doubts Chatbot DOM
+    this.liveAiChatFeed = document.getElementById("live-ai-chat-feed");
+    this.liveAiChatForm = document.getElementById("live-ai-chat-form");
+    this.liveAiChatInput = document.getElementById("live-ai-chat-input");
+    this.langSelect = document.getElementById("lang-select");
+
     // YouTube-style Subtitle & AI Chatbot State & Cache
     this.videoCaptionOverlay = document.getElementById("video-caption-overlay");
     this.ytCaptionText = document.getElementById("yt-caption-text");
@@ -250,6 +256,13 @@ class SmartClassroomStudentApp {
       this.aiChatForm.addEventListener("submit", (e) => {
         e.preventDefault();
         this.handleAIDoubtSubmit();
+      });
+    }
+
+    if (this.liveAiChatForm) {
+      this.liveAiChatForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        this.handleLiveAIDoubtSubmit();
       });
     }
 
@@ -993,6 +1006,39 @@ class SmartClassroomStudentApp {
     // 6. Update AI Bubble
     aiBubble.innerHTML = `🤖 <strong>AI Tutor [${timeStr}]</strong>:<br/>${answer}`;
     this.aiChatFeed.scrollTop = this.aiChatFeed.scrollHeight;
+  }
+
+  async handleLiveAIDoubtSubmit() {
+    if (!this.liveAiChatInput || !this.liveAiChatFeed) return;
+    const query = this.liveAiChatInput.value.trim();
+    if (!query) return;
+
+    this.liveAiChatInput.value = "";
+
+    // 1. Render User Message Bubble
+    const userBubble = document.createElement("div");
+    userBubble.style.cssText = "align-self: flex-end; background: #0284c7; color: #fff; padding: 6px 10px; border-radius: 10px 10px 2px 10px; max-width: 85%; word-break: break-word;";
+    userBubble.innerHTML = `💬 ${query}`;
+    this.liveAiChatFeed.appendChild(userBubble);
+    this.liveAiChatFeed.scrollTop = this.liveAiChatFeed.scrollHeight;
+
+    // 2. Render AI Loading Bubble
+    const aiBubble = document.createElement("div");
+    aiBubble.style.cssText = "align-self: flex-start; background: rgba(255,255,255,0.06); border: 1px solid rgba(56,189,248,0.25); color: #f8fafc; padding: 6px 10px; border-radius: 10px 10px 10px 2px; max-width: 88%; word-break: break-word;";
+    aiBubble.innerHTML = `🤖 <em>Analyzing live doubt in selected language...</em>`;
+    this.liveAiChatFeed.appendChild(aiBubble);
+    this.liveAiChatFeed.scrollTop = this.liveAiChatFeed.scrollHeight;
+
+    // 3. Extract Live Language from Top Bar Selector
+    const targetLang = this.langSelect ? this.langSelect.value : "hi";
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    // 4. Generate AI Response matched to target language
+    const answer = await this.generateAIDoubtResponse(query, "Live Classroom Stream", timeStr, targetLang);
+
+    // 5. Update AI Bubble
+    aiBubble.innerHTML = `🤖 <strong>Live AI Tutor [${timeStr}]</strong>:<br/>${answer}`;
+    this.liveAiChatFeed.scrollTop = this.liveAiChatFeed.scrollHeight;
   }
 
   async generateAIDoubtResponse(query, captionText, timeStr, targetLang) {
