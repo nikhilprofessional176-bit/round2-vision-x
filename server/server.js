@@ -109,8 +109,9 @@ app.use(cors());
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-// Serve static frontend files (index.html, style.css, app.js, teacher.html, teacher.js)
-app.use(express.static(PUBLIC_DIR));
+// NOTE: express.static is intentionally registered AFTER all /api routes below.
+// If it were here, Express would intercept every /api/* request, find no matching
+// file on disk, and return 404 before the route handlers ever ran.
 
 // Helper: Upload file to GitHub Repository using GitHub REST API
 async function uploadToGitHub({ owner, repo, token, pathInRepo, base64Content, message }) {
@@ -456,6 +457,77 @@ Be encouraging, beginner-friendly, and provide a clear step-by-step or real-worl
 });
 
 // =========================================================================
+// Teacher Doubts Analysis — Persistent Doubts Store
+// =========================================================================
+const DOUBTS_FILE = path.join(__dirname, 'doubts_db.json');
+let allDoubts = [];
+
+if (fs.existsSync(DOUBTS_FILE)) {
+  try {
+    allDoubts = JSON.parse(fs.readFileSync(DOUBTS_FILE, 'utf8'));
+  } catch(e) { allDoubts = []; }
+}
+
+function persistDoubt(doubtPayload) {
+  try {
+    allDoubts.push({
+      id: doubtPayload.id,
+      sessionId: doubtPayload.sessionId,
+      doubtText: doubtPayload.doubtText,
+      timestamp: doubtPayload.timestamp,
+      status: doubtPayload.status || "unread"
+    });
+    fs.writeFile(DOUBTS_FILE, JSON.stringify(allDoubts, null, 2), () => {});
+  } catch(e) {}
+}
+
+// GET all persisted doubts (for teacher analysis dashboard)
+app.get('/api/doubts', (req, res) => {
+  const sessionId = req.query.sessionId;
+  const data = sessionId ? allDoubts.filter(d => d.sessionId === sessionId) : allDoubts;
+  res.json({ success: true, doubts: data, total: data.length });
+});
+
+// POST update status of a doubt (resolve / flag)
+app.post('/api/doubts/update-status', (req, res) => {
+  const { doubtId, status } = req.body;
+  const doubt = allDoubts.find(d => d.id === doubtId);
+  if (doubt) {
+    doubt.status = status;
+    fs.writeFile(DOUBTS_FILE, JSON.stringify(allDoubts, null, 2), () => {});
+  }
+  res.json({ success: true });
+});
+
+// POST clear all doubts for a session
+app.post('/api/doubts/clear', (req, res) => {
+  const { sessionId } = req.body;
+  if (sessionId) {
+    allDoubts = allDoubts.filter(d => d.sessionId !== sessionId);
+  } else {
+    allDoubts = [];
+  }
+  fs.writeFile(DOUBTS_FILE, JSON.stringify(allDoubts, null, 2), () => {});
+  res.json({ success: true });
+});
+
+// POST seed demo doubt directly (for teacher analysis demo)
+app.post('/api/doubts/seed', (req, res) => {
+  const { sessionId, doubtText, timestamp, status } = req.body;
+  if (!doubtText) return res.status(400).json({ success: false });
+  const doubtPayload = {
+    id: `dbt-seed-${Date.now()}-${Math.floor(Math.random()*9999)}`,
+    sessionId: sessionId || 'cs101-recursion',
+    doubtText,
+    timestamp: timestamp || Date.now(),
+    status: status || 'unread'
+  };
+  allDoubts.push(doubtPayload);
+  fs.writeFile(DOUBTS_FILE, JSON.stringify(allDoubts, null, 2), () => {});
+  res.json({ success: true, doubt: doubtPayload });
+});
+
+// =========================================================================
 // Student Authentication Engine (JSON Store + csjmu Code Verification)
 // =========================================================================
 const STUDENTS_FILE = path.join(__dirname, 'students_db.json');
@@ -569,6 +641,161 @@ function generateSmartAIExplanation(query, captionText, timeStr) {
   }
 
   return `Regarding your doubt at timestamp ${timeStr} ("${captionText}"): The professor is highlighting how algorithm structure and memory allocation ensure high-performance, predictable execution.`;
+}
+
+// =========================================================================
+// PDF NOTES — LEVEL-PERSONALISED NOTES FROM IMPORTED PDF (Beginner / Intermediate / Expert)
+// =========================================================================
+app.post('/api/generate-pdf-notes', async (req, res) => {
+  try {
+    const { pdfText, fileName, level, targetLang } = req.body;
+    if (!pdfText || !pdfText.trim()) {
+      return res.status(400).json({ success: false, message: "No PDF text provided." });
+    }
+
+    const cleanLevel  = (level || "beginner").toLowerCase();
+    const cleanFile   = fileName || "Uploaded PDF Document";
+    // Truncate to ~6000 chars to stay within token limits
+    const truncated   = pdfText.length > 6000 ? pdfText.slice(0, 6000) + "\n...[content truncated]" : pdfText;
+
+    // Level-specific persona + instruction map
+    const levelMeta = {
+      beginner: {
+        persona: "You are a friendly, encouraging teacher explaining concepts to a complete beginner who has NO prior knowledge. Use very simple English, real-world analogies, short sentences, and avoid jargon. After every key term, provide a one-line plain-English definition in parentheses.",
+        badge: "🌱 Beginner",
+        quizNote: "Include 3 very simple quiz questions a first-year student can answer after reading."
+      },
+      intermediate: {
+        persona: "You are a subject expert creating revision notes for a student with basic knowledge. Go into 'how and why' explanations, include comparisons, pros/cons, and worked examples. Use moderate technical language but briefly explain advanced terms.",
+        badge: "⚡ Intermediate",
+        quizNote: "Include 4 medium-difficulty questions that test application of concepts, not just recall."
+      },
+      expert: {
+        persona: "You are writing advanced study notes for a senior engineer or graduate student. Include complexity analysis, edge cases, implementation trade-offs, and references to related advanced concepts. Assume strong foundational knowledge.",
+        badge: "🚀 Expert",
+        quizNote: "Include 5 challenging analytical questions — design problems, complexity comparisons, or system trade-off scenarios."
+      }
+    };
+
+    const meta = levelMeta[cleanLevel] || levelMeta.beginner;
+    const langInstruction = (targetLang === "hi") ? "Write the entire notes in Hindi (Hinglish is acceptable for technical terms)." : "Write in clear English.";
+
+    const systemPrompt = `${meta.persona}
+${langInstruction}
+
+You will receive raw text extracted from a PDF document titled "${cleanFile}".
+Generate comprehensive, well-structured personalised study notes at the **${meta.badge}** level.
+
+Format your response in Markdown with these exact sections:
+1. # 📑 [Document Title] — [Level] Study Notes
+2. ## 📌 Executive Summary (3-4 sentences)
+3. ## 🧠 Key Concepts & Definitions (cover all major topics found)
+4. ## 🔍 Deep-Dive Breakdown (detailed explanation of each concept)
+5. ## 💡 Real-World Examples & Analogies
+6. ## ⚡ Quick-Reference Summary Table (use plain text table if markdown table not supported)
+7. ## ❓ Self-Assessment Quiz
+   ${meta.quizNote}
+8. ## 🚀 Next Steps / What to Study Next
+
+Be thorough. Cover EVERY concept present in the PDF text.`;
+
+    const userMessage = `PDF Content:\n\n${truncated}`;
+
+    // 1. Try Cerebras Ultra-Fast AI
+    if (CEREBRAS_API_KEY) {
+      try {
+        const cerebrasRes = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${CEREBRAS_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: 'gpt-oss-120b',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user',   content: userMessage }
+            ],
+            max_tokens: 1500
+          })
+        });
+
+        if (cerebrasRes.status === 200) {
+          const data = await cerebrasRes.json();
+          const answer = data?.choices?.[0]?.message?.content;
+          if (answer) {
+            return res.json({
+              success: true,
+              notesMarkdown: answer,
+              engine: `Cerebras Ultra-Fast AI — ${meta.badge}`,
+              level: cleanLevel
+            });
+          }
+        }
+      } catch(e) {
+        console.log("[CEREBRAS PDF NOTES]", e.message);
+      }
+    }
+
+    // 2. Fallback: generate structured notes from extracted text locally
+    const fallback = generateFallbackPDFNotes(truncated, cleanFile, cleanLevel, meta.badge);
+    return res.json({
+      success: true,
+      notesMarkdown: fallback,
+      engine: `Smart Classroom AI Engine — ${meta.badge}`,
+      level: cleanLevel
+    });
+
+  } catch(err) {
+    console.error("PDF Notes API Error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+function generateFallbackPDFNotes(text, fileName, level, badge) {
+  // Extract first ~400 chars as excerpt
+  const excerpt = text.slice(0, 400).replace(/\n/g, ' ');
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 20).slice(0, 8);
+  const bulletPoints = sentences.map(s => `- ${s.trim()}.`).join('\n');
+
+  const levelIntro = {
+    beginner:     "These notes are written in simple, easy-to-understand language with analogies to help you grasp every concept from scratch.",
+    intermediate: "These notes assume basic familiarity with the subject and dive into the *how* and *why* behind each concept.",
+    expert:       "These notes cover advanced depth, edge cases, trade-offs, and implementation considerations for the experienced practitioner."
+  };
+
+  return `# 📑 ${fileName} — ${badge} Study Notes
+**AI Engine:** Smart Classroom AI | **Level:** ${badge} | **Date:** ${new Date().toLocaleDateString()}
+
+---
+
+## 📌 Executive Summary
+${levelIntro[level] || levelIntro.beginner}
+
+Document: *"${fileName}"* — key extracted content analysed below.
+
+> ${excerpt}...
+
+---
+
+## 🧠 Key Points Extracted from Document
+
+${bulletPoints}
+
+---
+
+## 💡 Study Tip for ${badge} Level
+${level === "beginner" ? "Read each point slowly. After every concept, close your eyes and try to explain it in your own words to a friend." : level === "intermediate" ? "For each concept, ask yourself: *When would I use this? What are its limitations?* Then look for real examples." : "Map each concept to system-design scenarios. Ask: *How does this scale? What breaks first under load?*"}
+
+---
+
+## ❓ Self-Assessment
+1. What is the core idea explained in the opening section of this document?
+2. List two key concepts from the content above.
+3. How would you explain the main topic to someone completely new to it?
+
+---
+*Generated by Smart Classroom 2.0 AI Engine | ${badge} Personalisation*`;
 }
 
 // IBM GRANITE 3.0 PERSONALIZED AI STUDY NOTES GENERATOR ENDPOINT
@@ -808,10 +1035,18 @@ if (WebSocketServer) {
       currentSequenceNumber: state.sequenceNumber
     }));
 
-    // Send buffered events so new students instantly see current live whiteboard & captions
+    // ── Room sync on connect ────────────────────────────────────────────
+    // Students: replay full event buffer (whiteboard strokes, slides, captions)
+    // Teachers: replay only unread doubts so they never miss one across reconnects
     if (role === 'student' && state.eventBuffer.length > 0) {
       console.log(`[ROOM SYNC] Pushing ${state.eventBuffer.length} past events to newly connected student.`);
       state.eventBuffer.forEach(evt => ws.send(JSON.stringify(evt)));
+    } else if (role === 'teacher') {
+      const pendingDoubts = state.eventBuffer.filter(e => e.type === 'student_live_doubt' && e.status === 'unread');
+      if (pendingDoubts.length > 0) {
+        console.log(`[ROOM SYNC] Replaying ${pendingDoubts.length} unread doubt(s) to reconnected teacher in room [${sessionId}].`);
+        pendingDoubts.forEach(d => ws.send(JSON.stringify(d)));
+      }
     }
 
     // Handle Incoming WebSocket Data Frames (Binary PCM Audio vs JSON text)
@@ -837,13 +1072,25 @@ if (WebSocketServer) {
       try {
         const data = JSON.parse(rawStr);
 
+        // ── HOT PATH fast-exit for partial_caption ─────────────────────────
+        // Partial tokens must NOT wait for seq-number assignment, buffer push,
+        // or any other bookkeeping. Relay them directly to students in < 1ms.
+        if (data.type === 'partial_caption') {
+          data.sessionId = sessionId;
+          const partialJson = JSON.stringify(data);
+          state.students.forEach(student => {
+            if (student.readyState === 1) student.send(partialJson);
+          });
+          return; // skip ALL bookkeeping below — ephemeral, not worth buffering
+        }
+
         // Assign Sequence Number and Event ID
         state.sequenceNumber++;
         data.sequenceNumber = state.sequenceNumber;
         data.eventId = data.eventId || `evt-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
         data.sessionId = sessionId;
 
-        // Store in Circular Buffer (max 500 events)
+        // Store in Circular Buffer (max 500 events — finals + strokes + shapes only)
         state.eventBuffer.push(data);
         if (state.eventBuffer.length > 500) state.eventBuffer.shift();
 
@@ -881,58 +1128,75 @@ function isProfaneText(text) {
           }
 
           console.log(`[STUDENT DOUBT] Room [${sessionId}] Anonymous Student: ${data.doubtText}`);
+
+          // Assign a proper sequence number so gap-recovery can replay it
+          state.sequenceNumber++;
           const doubtPayload = {
-            type: 'student_live_doubt',
-            id: `dbt-${Date.now()}`,
-            sessionId: sessionId,
-            studentName: "Anonymous Student",
-            studentRoll: "Anonymous",
-            doubtText: data.doubtText,
-            timestamp: Date.now(),
-            status: "unread"
+            type:           'student_live_doubt',
+            id:             `dbt-${Date.now()}`,
+            sessionId:      sessionId,
+            sequenceNumber: state.sequenceNumber,
+            eventId:        `evt-doubt-${Date.now()}`,
+            studentName:    "Anonymous Student",
+            studentRoll:    "Anonymous",
+            doubtText:      data.doubtText,
+            timestamp:      Date.now(),
+            status:         "unread"
           };
+
+          // Persist & buffer — indexed by sequence number for reliable catch-up
+          persistDoubt(doubtPayload);
           state.eventBuffer.push(doubtPayload);
+          if (state.eventBuffer.length > 500) state.eventBuffer.shift();
+
           const doubtJson = JSON.stringify(doubtPayload);
+
+          // Relay to ALL teacher sockets in this room
+          let teacherCount = 0;
           state.teachers.forEach(t => {
-            if (t.readyState === 1) t.send(doubtJson);
+            if (t.readyState === 1) { t.send(doubtJson); teacherCount++; }
           });
+          console.log(`[DOUBT RELAY] Sent to ${teacherCount} teacher socket(s) in room [${sessionId}].`);
+
+          // ACK back to the student
           ws.send(JSON.stringify({ type: 'doubt_sent_ack', doubtId: doubtPayload.id }));
           return;
         }
 
-        // Handle Teacher Resolve Doubt
+        // Handle Teacher Resolve Doubt — also update the buffered doubt status
         if (data.type === 'teacher_resolve_doubt') {
+          // Mark the doubt as resolved in the event buffer so reconnected teachers
+          // don't see it replayed as unread
+          const buffered = state.eventBuffer.find(e => e.id === data.doubtId);
+          if (buffered) buffered.status = 'resolved';
+
           const resolvePayload = {
-            type: 'teacher_resolve_doubt',
-            doubtId: data.doubtId,
+            type:      'teacher_resolve_doubt',
+            doubtId:   data.doubtId,
             sessionId: sessionId
           };
           const resolveJson = JSON.stringify(resolvePayload);
-          state.teachers.forEach(t => {
-            if (t.readyState === 1) t.send(resolveJson);
-          });
-          state.students.forEach(s => {
-            if (s.readyState === 1) s.send(resolveJson);
-          });
+          state.teachers.forEach(t => { if (t.readyState === 1) t.send(resolveJson); });
+          state.students.forEach(s => { if (s.readyState === 1) s.send(resolveJson); });
           return;
         }
 
-        // Handle Teacher Flag / Report Doubt
+        // Handle Teacher Flag / Report Doubt — also mark buffered entry
         if (data.type === 'teacher_flag_doubt') {
           console.log(`[TEACHER FLAGGED DOUBT] Doubt [${data.doubtId}] flagged by teacher.`);
+
+          const buffered = state.eventBuffer.find(e => e.id === data.doubtId);
+          if (buffered) buffered.status = 'flagged';
+
           const flagPayload = {
-            type: 'teacher_flag_doubt',
-            doubtId: data.doubtId,
+            type:      'teacher_flag_doubt',
+            doubtId:   data.doubtId,
             sessionId: sessionId,
-            message: "⚠️ A student doubt was FLAGGED & REPORTED by the Professor for violating Classroom Decorum!"
+            message:   "⚠️ A student doubt was FLAGGED & REPORTED by the Professor for violating Classroom Decorum!"
           };
           const flagJson = JSON.stringify(flagPayload);
-          state.teachers.forEach(t => {
-            if (t.readyState === 1) t.send(flagJson);
-          });
-          state.students.forEach(s => {
-            if (s.readyState === 1) s.send(flagJson);
-          });
+          state.teachers.forEach(t => { if (t.readyState === 1) t.send(flagJson); });
+          state.students.forEach(s => { if (s.readyState === 1) s.send(flagJson); });
           return;
         }
 
@@ -970,9 +1234,13 @@ function isProfaneText(text) {
 }
 
 // Asynchronous Non-Blocking Translation Processor
+// Uses setImmediate (Node.js) to defer past current I/O tick with near-0ms delay,
+// ensuring the final_caption relay above completes first, then translations fan out.
 function processAsyncTranslation(sessionId, captionData) {
-  setTimeout(() => {
-    const text = captionData.sourceText || "";
+  setImmediate(() => {
+    const text  = captionData.sourceText || "";
+    const state = sessionStateMap.get(sessionId);
+    if (!state) return;
 
     ["hi", "bn", "ar", "es"].forEach(lang => {
       const translatedText = DICTIONARY[lang] && DICTIONARY[lang][text]
@@ -980,28 +1248,30 @@ function processAsyncTranslation(sessionId, captionData) {
         : `[${lang.toUpperCase()}] ${text}`;
 
       const translationEvent = {
-        type: "translation_update",
-        sessionId: sessionId,
-        segmentId: captionData.segmentId,
-        eventId: `evt-trans-${Date.now()}`,
-        sequenceNumber: ++getOrCreateSessionState(sessionId).sequenceNumber,
-        timestamp: Date.now(),
-        status: "final",
-        sourceText: text,
+        type:           "translation_update",
+        sessionId:      sessionId,
+        segmentId:      captionData.segmentId,
+        eventId:        `evt-trans-${Date.now()}`,
+        sequenceNumber: ++state.sequenceNumber,
+        timestamp:      Date.now(),
+        status:         "final",
+        sourceText:     text,
         translatedText: translatedText,
-        language: lang
+        language:       lang
       };
 
       const serialized = JSON.stringify(translationEvent);
-      const state = sessionStateMap.get(sessionId);
-      if (state) {
-        state.students.forEach(client => {
-          if (client.readyState === 1) client.send(serialized);
-        });
-      }
+      state.students.forEach(client => {
+        if (client.readyState === 1) client.send(serialized);
+      });
     });
-  }, 100);
+  });
 }
+
+// Serve static frontend files LAST — after all /api routes are registered.
+// This ensures Express matches API routes first; only falls through to static
+// file serving when no route matched (correct behaviour for an SPA backend).
+app.use(express.static(PUBLIC_DIR));
 
 // Start Server
 server.listen(PORT, () => {

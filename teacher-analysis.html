@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>📊 Teacher Doubt Analysis — Smart Classroom 2.0</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #060911;
+      --surface: #0d1525;
+      --surface2: rgba(16, 23, 38, 0.7);
+      --border: rgba(255,255,255,0.08);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --blue: #38bdf8;
+      --green: #10b981;
+      --yellow: #f59e0b;
+      --red: #f43f5e;
+      --purple: #a855f7;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    /* ---- HEADER ---- */
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 22px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+    .header-title {
+      font-size: 1.3rem;
+      font-weight: 800;
+      color: var(--blue);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-sub {
+      font-size: 0.76rem;
+      color: var(--muted);
+      font-weight: 400;
+      margin-top: 2px;
+    }
+    .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    select, button {
+      background: #1e293b;
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.15);
+      padding: 8px 14px;
+      border-radius: 8px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: 'Inter', sans-serif;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    button:hover { background: var(--blue); color: #000; }
+    .btn-danger { background: rgba(244,63,94,0.15); border-color: rgba(244,63,94,0.3); color: var(--red); }
+    .btn-danger:hover { background: var(--red); color: #fff; }
+    .btn-seed { background: rgba(168,85,247,0.15); border-color: rgba(168,85,247,0.3); color: var(--purple); }
+    .btn-seed:hover { background: var(--purple); color: #fff; }
+    .btn-back { background: rgba(56,189,248,0.1); border-color: rgba(56,189,248,0.3); color: var(--blue); text-decoration: none; padding: 8px 14px; border-radius: 8px; font-size: 0.82rem; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-back:hover { background: var(--blue); color: #000; }
+
+    .refresh-info {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      color: var(--muted);
+    }
+
+    /* ---- STATUS ---- */
+    .da-status {
+      display: none;   /* JS sets display:block to show, display:none to hide */
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 0.84rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+      align-items: center;
+      gap: 8px;
+    }
+    .da-status.success { background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); color: var(--green); }
+    .da-status.error   { background: rgba(244,63,94,0.12);  border: 1.5px solid rgba(244,63,94,0.5); color: var(--red); font-weight: 700; }
+    .da-status.info    { background: rgba(56,189,248,0.1);  border: 1px solid rgba(56,189,248,0.25); color: var(--blue); }
+
+    /* ---- WEAK ALERT ---- */
+    .da-weak-alert {
+      background: rgba(244,63,94,0.08);
+      border: 1.5px solid rgba(244,63,94,0.4);
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 22px;
+    }
+    .da-alert-title {
+      font-size: 1rem;
+      font-weight: 800;
+      color: var(--red);
+      margin-bottom: 10px;
+    }
+    .da-alert-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .da-topic-tag {
+      background: rgba(244,63,94,0.15);
+      border: 1px solid rgba(244,63,94,0.35);
+      color: #fca5a5;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+    .da-alert-note {
+      font-size: 0.8rem;
+      color: #fda4af;
+      line-height: 1.5;
+    }
+
+    /* ---- KPI ROW ---- */
+    #da-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 14px;
+      margin-bottom: 22px;
+    }
+    .da-kpi-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 18px 16px;
+      text-align: center;
+      backdrop-filter: blur(10px);
+    }
+    .da-kpi-num {
+      font-size: 2.1rem;
+      font-weight: 800;
+      color: var(--blue);
+      font-family: 'JetBrains Mono', monospace;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+    .da-kpi-label {
+      font-size: 0.74rem;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .da-kpi-danger .da-kpi-num { color: var(--red); }
+    .da-kpi-success .da-kpi-num { color: var(--green); }
+    .da-kpi-warn .da-kpi-num { color: var(--yellow); }
+    .da-kpi-accent .da-kpi-num { color: var(--purple); }
+
+    /* ---- SECTION CARDS ---- */
+    .da-section {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 20px;
+      margin-bottom: 20px;
+      backdrop-filter: blur(10px);
+    }
+    .da-section-title {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: var(--blue);
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* ---- TWO-COL CHARTS ---- */
+    .da-charts-row {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    @media (max-width: 800px) {
+      .da-charts-row { grid-template-columns: 1fr; }
+    }
+
+    /* ---- RECOMMENDATIONS ---- */
+    .da-rec-card {
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      border-left: 4px solid;
+    }
+    .da-urgency-critical { background: rgba(244,63,94,0.08); border-left-color: var(--red); }
+    .da-urgency-high     { background: rgba(249,115,22,0.08); border-left-color: #f97316; }
+    .da-urgency-medium   { background: rgba(245,158,11,0.08); border-left-color: var(--yellow); }
+    .da-urgency-low      { background: rgba(16,185,129,0.06); border-left-color: var(--green); }
+    .da-rec-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .da-rec-icon { font-size: 1.2rem; }
+    .da-rec-topic { font-size: 0.9rem; font-weight: 800; color: var(--text); }
+    .da-rec-count { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
+    .da-urgency-badge {
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    .da-urgency-badge.da-urgency-critical { background: rgba(244,63,94,0.2); color: var(--red); }
+    .da-urgency-badge.da-urgency-high     { background: rgba(249,115,22,0.2); color: #f97316; }
+    .da-urgency-badge.da-urgency-medium   { background: rgba(245,158,11,0.2); color: var(--yellow); }
+    .da-urgency-badge.da-urgency-low      { background: rgba(16,185,129,0.15); color: var(--green); }
+    .da-rec-tip {
+      font-size: 0.82rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+
+    /* ---- DOUBTS LIST ---- */
+    #da-doubts-table { display: flex; flex-direction: column; gap: 10px; max-height: 420px; overflow-y: auto; }
+    .da-doubt-row {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .da-doubt-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+    }
+    .da-doubt-topic-tag {
+      background: rgba(56,189,248,0.12);
+      border: 1px solid rgba(56,189,248,0.25);
+      color: var(--blue);
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+    .da-doubt-text {
+      font-size: 0.85rem;
+      color: #e2e8f0;
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div>
+      <div class="header-title">📊 Teacher Doubt Analysis Dashboard</div>
+      <div class="header-sub">Smart Classroom 2.0 — AI-Powered Student Weakness Detector & Topic Heatmap</div>
+    </div>
+    <div class="header-controls">
+      <select id="da-session-filter">
+        <option value="all">📚 All Sessions / Classes</option>
+      </select>
+      <button id="da-refresh-btn" title="Refresh doubts data">🔄 Refresh</button>
+      <button id="da-seed-btn" class="btn-seed" title="Load realistic demo doubts for presentation">🎲 Load Demo Doubts</button>
+      <button id="da-clear-btn" class="btn-danger" title="Clear all stored doubts">🗑️ Clear All</button>
+      <a href="teacher.html" class="btn-back">← Back to Control Panel</a>
+    </div>
+  </header>
+
+  <div id="da-status-msg" class="da-status"></div>
+
+  <!-- WEAK TOPIC ALERT -->
+  <div id="da-weak-alert" class="da-weak-alert" style="display:none;"></div>
+
+  <!-- KPI CARDS -->
+  <div id="da-kpi-row"></div>
+
+  <!-- CHARTS ROW -->
+  <div class="da-charts-row">
+    <!-- Bar Chart -->
+    <div class="da-section">
+      <div class="da-section-title">📊 Doubts Distribution by Topic (Bar Chart)</div>
+      <div id="da-bar-chart">
+        <div style="color:var(--muted); text-align:center; padding:30px;">No data to chart yet.</div>
+      </div>
+    </div>
+
+    <!-- Donut + Timeline -->
+    <div class="da-section">
+      <div class="da-section-title">🍩 Topic Share (Top 6)</div>
+      <div id="da-donut">
+        <div style="color:var(--muted); text-align:center; padding:30px;">No data yet.</div>
+      </div>
+      <div id="da-timeline"></div>
+    </div>
+  </div>
+
+  <!-- AI RECOMMENDATIONS -->
+  <div class="da-section">
+    <div class="da-section-title">🤖 AI Teacher Recommendations — Kahan Dhyan Dena Hai</div>
+    <div id="da-recommendations">
+      <div style="color:var(--muted); text-align:center; padding:20px;">No recommendations yet — collect more doubts first.</div>
+    </div>
+  </div>
+
+  <!-- ALL DOUBTS TABLE -->
+  <div class="da-section">
+    <div class="da-section-title" style="justify-content:space-between;">
+      <span>🗒️ All Anonymous Student Doubts (Latest First)</span>
+      <span class="refresh-info">Last updated: <span id="da-last-refresh">—</span></span>
+    </div>
+    <div id="da-doubts-table">
+      <div style="color:var(--muted); text-align:center; padding:30px; font-size:0.88rem;">No doubts recorded yet. Once students send doubts, they appear here.</div>
+    </div>
+  </div>
+
+  <script src="teacher-analysis.js"></script>
+</body>
+</html>

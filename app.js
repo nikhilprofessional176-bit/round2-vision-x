@@ -48,7 +48,15 @@ class SmartClassroomStudentApp {
     this.activeSegmentId = null;
 
     // Live Real-Time Vector Strokes Array
-    this.liveStrokes = [];
+    this.liveStrokes  = [];
+    // Live shapes received from teacher
+    this.liveShapes   = [];
+    // Live image overlays (diagrams, slide backgrounds)
+    this.liveOverlays = [];
+    // Presentation slides cache (indexed by slideIndex)
+    this.slideCache   = {};
+    this.currentSlide = 0;
+    this.slideImage   = null;
 
     // WebSocket & Sequence State
     this.ws = null;
@@ -97,6 +105,10 @@ class SmartClassroomStudentApp {
     this.checkStudentSession();
     this.setupAuthListeners();
     this.setupAskTeacherDoubtListeners();
+    this._pdfLevel = "beginner";
+    this._pdfExtractedText = "";
+    this._pdfFileName = "";
+    this.setupPDFNotesListeners();
 
     // Recorded Lectures Modal DOM Cache
     this.recordingsBtn = document.getElementById("recordings-btn");
@@ -268,6 +280,7 @@ class SmartClassroomStudentApp {
     // Video Player Subtitles & CC Listener
     if (this.videoPlayer) {
       this.videoPlayer.addEventListener("timeupdate", () => this.updateVideoSubtitles());
+      this.setupVideoFullscreenHandlers();
     }
 
     if (this.playerLangSelect) {
@@ -483,7 +496,8 @@ class SmartClassroomStudentApp {
       case "partial_caption":
       case "final_caption":
       case "translation_update":
-        this.handleCaptionEvent(data, now);
+        // handleCaptionEvent is async — fire-and-forget; errors are swallowed internally
+        this.handleCaptionEvent(data, now).catch(() => {});
         break;
 
       case "stroke":
@@ -491,8 +505,41 @@ class SmartClassroomStudentApp {
         this.handleStrokeEvent(data);
         break;
 
+      // ── Vector Shapes ──────────────────────────────────────────────
+      case "shape":
+        this.handleShapeEvent(data);
+        break;
+
+      // ── Presentation Slides ────────────────────────────────────────
+      case "presentation_slide":
+        // Cache the slide data
+        this.slideCache[data.slideIndex] = data.imageData;
+        this.logDebug("SLIDE", `Cached slide ${data.slideIndex + 1} / ${data.totalSlides}`);
+        break;
+
+      case "presentation_slide_change":
+        this.handleSlideChange(data.slideIndex);
+        break;
+
+      case "presentation_clear":
+        this.slideCache  = {};
+        this.slideImage  = null;
+        this.currentSlide= 0;
+        this.renderWhiteboardStrokes();
+        this.logDebug("SLIDE", "Slides cleared by teacher.");
+        break;
+
+      // ── Diagram / Image Overlay ────────────────────────────────────
+      case "whiteboard_image_overlay":
+        this.handleImageOverlay(data);
+        break;
+
       case "clear_canvas":
-        this.liveStrokes = [];
+        this.liveStrokes  = [];
+        this.liveShapes   = [];
+        this.liveOverlays = [];
+        this.slideCache   = {};
+        this.slideImage   = null;
         this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
         this.renderGridBackground();
         this.logDebug("CANVAS", "Canvas cleared by teacher.");
@@ -522,21 +569,25 @@ class SmartClassroomStudentApp {
     }
   }
 
-  handleCaptionEvent(data, receiveTimestamp) {
+  async handleCaptionEvent(data, receiveTimestamp) {
     const segmentId = data.segmentId || `seg-${data.timestamp || Date.now()}`;
-    const status = data.status || (data.type === "partial_caption" ? "partial" : "final");
+    const status    = data.status || (data.type === "partial_caption" ? "partial" : "final");
+    const lang      = this.currentLanguage;
+    const needsTranslation = lang !== "en";
 
+    // ── Step 1: Update in-memory model (< 0.1ms) ─────────────────────
     let textChanged = false;
     let seg = this.segmentsMap.get(segmentId);
     if (!seg) {
       seg = {
-        id: segmentId,
-        startTime: Math.floor(this.currentTime),
-        endTime: Math.floor(this.currentTime) + 5,
-        englishText: data.sourceText || "",
-        status: status,
-        translations: {},
-        lastTranslatedText: ""
+        id:                 segmentId,
+        startTime:          Math.floor(this.currentTime),
+        endTime:            Math.floor(this.currentTime) + 5,
+        englishText:        data.sourceText || "",
+        status:             status,
+        translations:       {},
+        lastTranslatedText: "",
+        _translating:       false   // shimmer state flag
       };
       this.segmentsMap.set(segmentId, seg);
       this.currentLecture.segments.push(seg);
@@ -544,27 +595,64 @@ class SmartClassroomStudentApp {
     } else {
       if (data.sourceText && seg.englishText !== data.sourceText) {
         seg.englishText = data.sourceText;
-        textChanged = true;
+        textChanged     = true;
       }
       seg.status = status;
     }
 
-    if (data.translatedText && this.currentLanguage !== "en") {
-      seg.translations[this.currentLanguage] = data.translatedText;
+    // ── If server already delivered a translation, store it now ────────
+    if (data.translatedText && needsTranslation) {
+      seg.translations[lang] = data.translatedText;
     }
 
-    // Instant Target In-Place DOM Mutation
-    this.renderOrUpdateSingleCard(seg);
+    // ═══════════════════════════════════════════════════════════════════
+    // ZERO-FLICKER GATE
+    // Strategy by event type:
+    //
+    //  FINAL   → translation is worth a network round-trip. Await it
+    //            BEFORE the first DOM paint. The card renders exactly once,
+    //            already in the target language. No shimmer needed.
+    //
+    //  PARTIAL → we cannot block a 100ms stream on a network call.
+    //            If we already have a cached translation, paint it directly.
+    //            If not, show a shimmer placeholder — NEVER the raw English.
+    //            When the matching FINAL arrives it overwrites cleanly.
+    // ═══════════════════════════════════════════════════════════════════
+    if (needsTranslation) {
+      const hasCached = !!seg.translations[lang];
+      const cleanText = seg.englishText.replace(/^\[[A-Z]{2}\]\s*/i, "").trim();
 
-    // Auto-trigger live translation if selected language is non-English and text changed or translation missing
-    if (this.currentLanguage !== "en" && (textChanged || !seg.translations[this.currentLanguage]) && seg.englishText) {
-      this.translateSegmentAsync(seg, this.currentLanguage, textChanged);
+      if (status === "final" && (!hasCached || (textChanged && seg.lastTranslatedText !== cleanText))) {
+        // ── FINAL: pre-translate, then paint once ──────────────────────
+        seg._translating = true;
+        this._microUpdateCard(seg);          // paint shimmer immediately
+        try {
+          await this.translateSegmentAsync(seg, lang, textChanged);
+        } catch (_) {}
+        seg._translating = false;
+        this._microUpdateCard(seg);          // repaint with translated text
+      } else if (status === "partial" && !hasCached) {
+        // ── PARTIAL, no cache: paint shimmer, do NOT show English ──────
+        seg._translating = true;
+        this._microUpdateCard(seg);
+        // Fire translation in background; card will be overwritten by FINAL
+        this.translateSegmentAsync(seg, lang, false).then(() => {
+          if (seg._translating) { seg._translating = false; this._microUpdateCard(seg); }
+        }).catch(() => {});
+      } else {
+        // ── Translation already cached: paint directly, zero flicker ───
+        seg._translating = false;
+        this._microUpdateCard(seg);
+      }
+    } else {
+      // ── English selected: paint immediately, no translation needed ───
+      this._microUpdateCard(seg);
     }
 
-    // Stage Latency Benchmark Logging
+    // ── E2E latency badge (debug only, zero DOM cost) ──────────────────
     if (data.timestamp) {
-      const totalLatency = Math.max(5, receiveTimestamp - data.timestamp);
-      this.logDebug("LATENCY LOG", `browserRendered for [${segmentId}] - End-to-End Latency: ${totalLatency}ms`);
+      const latencyMs = Math.max(0, receiveTimestamp - data.timestamp);
+      this.logDebug("LATENCY", `${status.toUpperCase()} [${segmentId.slice(-8)}] E2E: ${latencyMs}ms`);
     }
 
     if (this.isTTSOn && status === "final") {
@@ -611,6 +699,58 @@ class SmartClassroomStudentApp {
     this.logDebug("STROKE", `Received live stroke (${data.stroke.points.length} points)`);
   }
 
+  // ── Shape Event Handler ──────────────────────────────────────────────────
+  handleShapeEvent(data) {
+    if (!data.shape) return;
+    this.liveShapes.push(data.shape);
+    this._drawStudentShape(data.shape);
+    this.logDebug("SHAPE", `Received shape: ${data.shape.shapeType}`);
+  }
+
+  // ── Slide Change ─────────────────────────────────────────────────────────
+  handleSlideChange(index) {
+    this.currentSlide = index;
+    const dataUrl = this.slideCache[index];
+    if (!dataUrl) {
+      this.logDebug("SLIDE", `Slide ${index} not cached yet — will render on receipt.`);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      this.slideImage = img;
+      this.renderWhiteboardStrokes();
+      this.logDebug("SLIDE", `Slide ${index + 1} rendered on student canvas.`);
+    };
+    img.src = dataUrl;
+  }
+
+  // ── Image Overlay Handler ────────────────────────────────────────────────
+  handleImageOverlay(data) {
+    if (!data.imageUrl) return;
+    const overlay = {
+      id:         `ov-${Date.now()}`,
+      imageUrl:   data.imageUrl,
+      query:      data.query || "",
+      position:   data.position   || { x: 0.05, y: 0.05 },
+      dimensions: data.dimensions || { width: 0.90, height: 0.85 },
+      img:        null
+    };
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      overlay.img = img;
+      this.liveOverlays.push(overlay);
+      this.renderWhiteboardStrokes();
+      this.logDebug("OVERLAY", `Image overlay rendered: "${overlay.query}"`);
+    };
+    img.onerror = () => {
+      // Still push a placeholder so we don't block the pipeline
+      this.liveOverlays.push(overlay);
+      this.logDebug("OVERLAY", `⚠️ Image failed to load (CORS?): ${data.imageUrl}`);
+    };
+    img.src = data.imageUrl;
+  }
+
   // =========================================================================
   // Target DOM Micro-Updates (Instant In-Place Segment Mutation)
   // =========================================================================
@@ -622,62 +762,108 @@ class SmartClassroomStudentApp {
     });
   }
 
+  // ── Full rebuild (used by renderCaptions / loadLectureSession) ─────────
   renderOrUpdateSingleCard(seg) {
+    this._microUpdateCard(seg);
+  }
+
+  // ── Sub-3ms in-place micro-mutator ────────────────────────────────────
+  // Zero-flicker contract:
+  //   • seg._translating = true  → show shimmer, NEVER English text
+  //   • seg._translating = false → show translated text (or English if lang=en)
+  _microUpdateCard(seg) {
+    const lang          = this.currentLanguage;
+    const cleanEng      = (seg.englishText || "").replace(/^\[[A-Z]{2}\]\s*/i, "").trim();
+    const isShimmering  = !!seg._translating;
+
+    // Determine what text to paint
+    // Priority: shimmer > cached translation > English (only when lang === "en")
+    let textToDisplay;
+    let isTranslated = false;
+    if (isShimmering) {
+      textToDisplay = "";            // shimmer renders via CSS, no text painted
+    } else if (lang !== "en" && seg.translations[lang]) {
+      textToDisplay = seg.translations[lang];
+      isTranslated  = true;
+    } else if (lang === "en") {
+      textToDisplay = cleanEng;
+    } else {
+      // Non-English, no translation yet, not shimmering — this path only
+      // happens if called from renderCaptions for old historical segments.
+      // Show a subtle italic placeholder rather than raw English.
+      textToDisplay = "";
+      isShimmering  || (seg._translating = false);
+    }
+
+    const formattedText = isShimmering ? "" : this.highlightTechnicalTerms(textToDisplay);
+    const isPartial     = seg.status === "partial";
+
     let card = document.getElementById(`card-${seg.id}`);
-    let cleanEng = (seg.englishText || "").replace(/^\[[A-Z]{2}\]\s*/i, '').trim();
-
-    const isTranslated = this.currentLanguage !== "en" && seg.translations[this.currentLanguage];
-    const textToDisplay = isTranslated
-      ? seg.translations[this.currentLanguage]
-      : cleanEng;
-
-    const formattedText = this.highlightTechnicalTerms(textToDisplay);
-    const timeLabel = this.formatTime(seg.startTime || 0);
 
     if (!card) {
+      // First paint — build the card skeleton
       card = document.createElement("div");
-      card.id = `card-${seg.id}`;
-      card.className = `caption-card ${seg.status === "partial" ? "partial" : ""}`;
-
+      card.id        = `card-${seg.id}`;
+      card.className = `caption-card${isPartial ? " partial" : ""}${isShimmering ? " translating" : ""}`;
       card.innerHTML = `
         <div class="caption-meta">
-          <span class="caption-time">⏱️ ${timeLabel}</span>
-          <span class="caption-status" style="font-size:0.7rem;">${seg.status === "partial" ? "LIVE STREAMING" : "FINAL"}</span>
+          <span class="caption-time">⏱️ ${this.formatTime(seg.startTime || 0)}</span>
+          <span class="caption-status" style="font-size:0.7rem;">${isPartial ? "LIVE STREAMING" : "FINAL"}</span>
         </div>
-        <div class="caption-text-source" style="font-size: 0.92rem; font-weight: 600; color: ${isTranslated ? '#38bdf8' : '#f8fafc'};">${formattedText}</div>
-        ${isTranslated ? `<div class="caption-text-translated" style="font-size: 0.78rem; color: #94a3b8; margin-top: 4px;">Original: ${cleanEng}</div>` : ''}
-      `;
-
-      card.addEventListener("click", () => {
-        this.currentTime = seg.startTime;
-        this.updateView();
-      });
-
+        <div class="caption-text-source" style="font-size:0.92rem;font-weight:600;color:${isTranslated ? "#38bdf8" : "#f8fafc"};">${isShimmering ? '<span class="caption-shimmer"></span>' : formattedText}</div>
+        ${isTranslated ? `<div class="caption-text-translated" style="font-size:0.78rem;color:#94a3b8;margin-top:4px;">Original: ${cleanEng}</div>` : ""}`;
+      card.addEventListener("click", () => { this.currentTime = seg.startTime; this.updateView(); });
       this.captionFeed.appendChild(card);
       this.captionFeed.scrollTop = this.captionFeed.scrollHeight;
-    } else {
-      card.className = `caption-card ${seg.status === "partial" ? "partial" : ""}`;
-      const srcEl = card.querySelector(".caption-text-source");
-      if (srcEl) {
-        srcEl.innerHTML = formattedText;
-        srcEl.style.color = isTranslated ? '#38bdf8' : '#f8fafc';
-      }
+      return;
+    }
 
-      const statusEl = card.querySelector(".caption-status");
-      if (statusEl) statusEl.textContent = seg.status === "partial" ? "LIVE STREAMING" : "FINAL";
+    // Card already exists — surgical property writes only ─────────────────
+    if (isPartial !== card.classList.contains("partial")) {
+      card.classList.toggle("partial", isPartial);
+    }
+    if (isShimmering !== card.classList.contains("translating")) {
+      card.classList.toggle("translating", isShimmering);
+    }
 
-      let transEl = card.querySelector(".caption-text-translated");
-      if (isTranslated) {
-        if (!transEl) {
-          transEl = document.createElement("div");
-          transEl.className = "caption-text-translated";
-          transEl.style.cssText = "font-size: 0.78rem; color: #94a3b8; margin-top: 4px;";
-          card.appendChild(transEl);
+    const srcEl = card.querySelector(".caption-text-source");
+    if (srcEl) {
+      if (isShimmering) {
+        // Replace content with shimmer bar — guaranteed no English text
+        if (!srcEl.querySelector(".caption-shimmer")) {
+          srcEl.innerHTML = '<span class="caption-shimmer"></span>';
         }
-        transEl.textContent = `Original: ${cleanEng}`;
-      } else if (transEl) {
-        transEl.remove();
+        if (srcEl.style.color !== "#94a3b8") srcEl.style.color = "#94a3b8";
+      } else {
+        // Restore real text — write only if changed
+        if (srcEl.innerHTML !== formattedText) srcEl.innerHTML = formattedText;
+        const newColor = isTranslated ? "#38bdf8" : "#f8fafc";
+        if (srcEl.style.color !== newColor) srcEl.style.color = newColor;
       }
+    }
+
+    const statusEl = card.querySelector(".caption-status");
+    if (statusEl) {
+      const newStatus = isPartial ? "LIVE STREAMING" : "FINAL";
+      if (statusEl.textContent !== newStatus) statusEl.textContent = newStatus;
+    }
+
+    let transEl = card.querySelector(".caption-text-translated");
+    if (isTranslated && !isShimmering) {
+      const origLine = `Original: ${cleanEng}`;
+      if (!transEl) {
+        transEl = document.createElement("div");
+        transEl.className = "caption-text-translated";
+        transEl.style.cssText = "font-size:0.78rem;color:#94a3b8;margin-top:4px;";
+        card.appendChild(transEl);
+      }
+      if (transEl.textContent !== origLine) transEl.textContent = origLine;
+    } else if (transEl) {
+      transEl.remove();
+    }
+
+    // Scroll only when the last card is mutated (avoids forced-layout on every update)
+    if (card === this.captionFeed.lastElementChild) {
       this.captionFeed.scrollTop = this.captionFeed.scrollHeight;
     }
   }
@@ -696,8 +882,10 @@ class SmartClassroomStudentApp {
   // =========================================================================
   loadLectureSession(session) {
     this.currentLecture = session;
-    this.currentTime = 0;
-    this.liveStrokes = [];
+    this.currentTime    = 0;
+    this.liveStrokes    = [];
+    this.liveShapes     = [];
+    this.liveOverlays   = [];
     this.timelineSlider.max = session.durationSeconds;
     this.totalTimeEl.textContent = this.formatTime(session.durationSeconds);
     this.renderCaptions();
@@ -706,21 +894,85 @@ class SmartClassroomStudentApp {
 
   renderWhiteboardStrokes() {
     this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-    this.renderGridBackground();
 
-    // 1. Render historical timeline strokes up to currentTime
-    if (this.currentLecture && this.currentLecture.segments) {
-      this.currentLecture.segments.forEach(segment => {
-        if (this.currentTime < segment.startTime) return;
-        if (segment.strokes) {
-          segment.strokes.forEach(stroke => this.drawSingleStroke(stroke));
-        }
+    // 1. Slide background (teacher presentation) — replaces grid when active
+    if (this.slideImage) {
+      const iw    = this.slideImage.naturalWidth  || this.canvasWidth;
+      const ih    = this.slideImage.naturalHeight || this.canvasHeight;
+      const scale = Math.min(this.canvasWidth / iw, this.canvasHeight / ih) * this.zoom;
+      const dx    = this.panX + (this.canvasWidth  - iw * scale) / 2;
+      const dy    = this.panY + (this.canvasHeight - ih * scale) / 2;
+      this.ctx.drawImage(this.slideImage, dx, dy, iw * scale, ih * scale);
+    } else {
+      this.renderGridBackground();
+    }
+
+    // 2. Image overlays (diagrams placed by teacher)
+    if (this.liveOverlays && this.liveOverlays.length > 0) {
+      this.liveOverlays.forEach(ov => {
+        if (!ov.img || !ov.img.complete) return;
+        const x = ov.position.x   * this.canvasWidth  * this.zoom + this.panX;
+        const y = ov.position.y   * this.canvasHeight * this.zoom + this.panY;
+        const w = ov.dimensions.width  * this.canvasWidth  * this.zoom;
+        const h = ov.dimensions.height * this.canvasHeight * this.zoom;
+        this.ctx.drawImage(ov.img, x, y, w, h);
       });
     }
 
-    // 2. ALWAYS render live teacher strokes in real-time
+    // 3. Historical timeline strokes up to currentTime
+    if (this.currentLecture && this.currentLecture.segments) {
+      this.currentLecture.segments.forEach(segment => {
+        if (this.currentTime < segment.startTime) return;
+        if (segment.strokes) segment.strokes.forEach(stroke => this.drawSingleStroke(stroke));
+      });
+    }
+
+    // 4. Live teacher freehand strokes
     if (this.liveStrokes && this.liveStrokes.length > 0) {
       this.liveStrokes.forEach(stroke => this.drawSingleStroke(stroke));
+    }
+
+    // 5. Live vector shapes
+    if (this.liveShapes && this.liveShapes.length > 0) {
+      this.liveShapes.forEach(sh => this._drawStudentShape(sh));
+    }
+  }
+
+  // ── Student-side shape renderer (mirrors teacher's _drawShape) ────────────
+  _drawStudentShape(sh) {
+    if (!sh || !sh.startPoint || !sh.endPoint) return;
+    const s = this.worldToScreen(sh.startPoint.x, sh.startPoint.y);
+    const e = this.worldToScreen(sh.endPoint.x,   sh.endPoint.y);
+    this.ctx.strokeStyle = sh.color     || "#38bdf8";
+    this.ctx.lineWidth   = (sh.lineWidth || 3) * this.zoom;
+    this.ctx.lineCap     = "round";
+    this.ctx.lineJoin    = "round";
+    this.ctx.fillStyle   = sh.filled ? (sh.color || "#38bdf8") : "transparent";
+    this.ctx.beginPath();
+
+    if (sh.shapeType === "line") {
+      this.ctx.moveTo(s.x, s.y); this.ctx.lineTo(e.x, e.y); this.ctx.stroke();
+    } else if (sh.shapeType === "arrow") {
+      const headLen = 14 * this.zoom;
+      const angle   = Math.atan2(e.y - s.y, e.x - s.x);
+      this.ctx.moveTo(s.x, s.y); this.ctx.lineTo(e.x, e.y); this.ctx.stroke();
+      this.ctx.beginPath();
+      this.ctx.moveTo(e.x, e.y);
+      this.ctx.lineTo(e.x - headLen * Math.cos(angle - Math.PI / 6), e.y - headLen * Math.sin(angle - Math.PI / 6));
+      this.ctx.moveTo(e.x, e.y);
+      this.ctx.lineTo(e.x - headLen * Math.cos(angle + Math.PI / 6), e.y - headLen * Math.sin(angle + Math.PI / 6));
+      this.ctx.stroke();
+    } else if (sh.shapeType === "rect") {
+      this.ctx.strokeRect(s.x, s.y, e.x - s.x, e.y - s.y);
+      if (sh.filled) this.ctx.fillRect(s.x, s.y, e.x - s.x, e.y - s.y);
+    } else if (sh.shapeType === "circle") {
+      const rx = Math.abs(e.x - s.x) / 2;
+      const ry = Math.abs(e.y - s.y) / 2;
+      const cx = s.x + (e.x - s.x) / 2;
+      const cy = s.y + (e.y - s.y) / 2;
+      this.ctx.ellipse(cx, cy, rx || 1, ry || 1, 0, 0, 2 * Math.PI);
+      this.ctx.stroke();
+      if (sh.filled) this.ctx.fill();
     }
   }
 
@@ -1005,12 +1257,72 @@ class SmartClassroomStudentApp {
     this.logDebug("VIDEO", `Streaming recorded video with CC subtitles: ${videoUrl}`);
   }
 
+  setupVideoFullscreenHandlers() {
+    const video = document.getElementById("lecture-video-player");
+    if (!video) return;
+
+    try {
+      if (video.textTracks && video.textTracks.length === 0) {
+        this.nativeTrack = video.addTextTrack("captions", "Subtitles", "en");
+      } else if (video.textTracks && video.textTracks.length > 0) {
+        this.nativeTrack = video.textTracks[0];
+      }
+      if (this.nativeTrack) {
+        this.nativeTrack.mode = "hidden";
+      }
+    } catch(e) {}
+
+    const handleFSChange = () => {
+      const fsElem = document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement;
+      if (fsElem === video) {
+        if (this.nativeTrack) this.nativeTrack.mode = "showing";
+        if (this.videoCaptionOverlay) this.videoCaptionOverlay.style.display = "none";
+      } else {
+        if (this.nativeTrack) this.nativeTrack.mode = "hidden";
+        if (this.videoCaptionOverlay && this.currentActiveSegId) {
+          this.videoCaptionOverlay.style.display = "inline-block";
+        }
+      }
+    };
+
+    document.addEventListener("fullscreenchange", handleFSChange);
+    document.addEventListener("webkitfullscreenchange", handleFSChange);
+  }
+
+  updateNativeTrackCue(start, end, text) {
+    if (!this.nativeTrack) return;
+    try {
+      if (this.nativeTrack.cues) {
+        while (this.nativeTrack.cues.length > 0) {
+          this.nativeTrack.removeCue(this.nativeTrack.cues[0]);
+        }
+      }
+      if (typeof VTTCue !== "undefined" && text) {
+        const cue = new VTTCue(Math.max(0, start), Math.max(start + 1, end), text);
+        cue.line = -2;
+        this.nativeTrack.addCue(cue);
+      }
+    } catch(e) {}
+  }
+
+  clearNativeTrack() {
+    if (!this.nativeTrack) return;
+    try {
+      if (this.nativeTrack.cues) {
+        while (this.nativeTrack.cues.length > 0) {
+          this.nativeTrack.removeCue(this.nativeTrack.cues[0]);
+        }
+      }
+    } catch(e) {}
+  }
+
   async updateVideoSubtitles(forceRedraw = false) {
     if (!this.videoPlayer || !this.videoCaptionOverlay || !this.ytCaptionText) return;
     const currentTime = this.videoPlayer.currentTime;
 
     if (!this.activeVideoCaptions || this.activeVideoCaptions.length === 0) {
       this.videoCaptionOverlay.style.display = "none";
+      this.clearNativeTrack();
       return;
     }
 
@@ -1019,6 +1331,7 @@ class SmartClassroomStudentApp {
     if (!activeSeg) {
       this.videoCaptionOverlay.style.display = "none";
       this.currentActiveSegId = null;
+      this.clearNativeTrack();
       return;
     }
 
@@ -1030,27 +1343,29 @@ class SmartClassroomStudentApp {
     this.videoCaptionOverlay.style.display = "inline-block";
 
     const text = activeSeg.text || "";
-    if (this.activeSubLang === "en") {
-      this.ytCaptionText.textContent = text;
-      return;
-    }
+    let displayText = text;
 
-    const cacheKey = `${activeSeg.id}_${this.activeSubLang}`;
-    if (this.subTranslationCache.has(cacheKey)) {
-      this.ytCaptionText.textContent = this.subTranslationCache.get(cacheKey);
-      return;
-    }
-
-    this.ytCaptionText.textContent = text;
-    try {
-      const translated = await this.translateTextAsync(text, this.activeSubLang);
-      this.subTranslationCache.set(cacheKey, translated);
-      if (this.currentActiveSegId === activeSeg.id) {
-        this.ytCaptionText.textContent = translated;
+    if (this.activeSubLang !== "en") {
+      const cacheKey = `${activeSeg.id}_${this.activeSubLang}`;
+      if (this.subTranslationCache.has(cacheKey)) {
+        displayText = this.subTranslationCache.get(cacheKey);
+      } else {
+        this.ytCaptionText.textContent = text;
+        this.updateNativeTrackCue(activeSeg.startTime, activeSeg.endTime, text);
+        try {
+          const translated = await this.translateTextAsync(text, this.activeSubLang);
+          this.subTranslationCache.set(cacheKey, translated);
+          if (this.currentActiveSegId === activeSeg.id) {
+            displayText = translated;
+          }
+        } catch (e) {
+          console.log("Subtitle Translation Error:", e);
+        }
       }
-    } catch (e) {
-      console.log("Subtitle Translation Error:", e);
     }
+
+    this.ytCaptionText.textContent = displayText;
+    this.updateNativeTrackCue(activeSeg.startTime, activeSeg.endTime, displayText);
   }
 
   async translateTextAsync(text, targetLang) {
@@ -1247,6 +1562,9 @@ class SmartClassroomStudentApp {
       this.notesModal.style.display = "flex";
     }
 
+    // Switch to lecture tab when opened from the export button
+    this._switchNotesTab("lecture");
+
     if (!this.notesContentBody) return;
 
     const targetLang = this.langSelect ? this.langSelect.value : "hi";
@@ -1285,6 +1603,190 @@ class SmartClassroomStudentApp {
     }
 
     this.notesContentBody.innerHTML = `<div style="color: #f87171; text-align: center; padding: 20px;">Failed to generate notes with IBM Granite Model. Please try again.</div>`;
+  }
+
+  // =========================================================================
+  // PDF Import & Level-Personalised Notes
+  // =========================================================================
+  _switchNotesTab(tab) {
+    const lectureBtn = document.getElementById("notes-src-lecture-btn");
+    const pdfBtn     = document.getElementById("notes-src-pdf-btn");
+    const pdfPanel   = document.getElementById("notes-pdf-panel");
+    const badge      = document.getElementById("notes-engine-badge");
+    if (!lectureBtn || !pdfBtn || !pdfPanel) return;
+    if (tab === "pdf") {
+      lectureBtn.classList.remove("notes-src-active");
+      pdfBtn.classList.add("notes-src-active");
+      pdfPanel.style.display = "flex";
+      if (badge) badge.textContent = "🤖 IBM Granite AI — PDF Mode";
+    } else {
+      pdfBtn.classList.remove("notes-src-active");
+      lectureBtn.classList.add("notes-src-active");
+      pdfPanel.style.display = "none";
+      if (badge) badge.textContent = "🤖 IBM Granite AI Model";
+    }
+    this._notesTab = tab;
+  }
+
+  _switchLevel(level) {
+    this._pdfLevel = level;
+    const hints = {
+      beginner:     "Simple language, real-world analogies, no assumed knowledge",
+      intermediate: "Assumes basic knowledge — dives into how & why, comparisons, examples",
+      expert:       "Advanced depth — edge cases, complexity analysis, implementation patterns"
+    };
+    ["beginner", "intermediate", "expert"].forEach(l => {
+      const btn = document.getElementById(`level-${l}-btn`);
+      if (btn) btn.classList.toggle("notes-level-active", l === level);
+    });
+    const hint = document.getElementById("level-hint");
+    if (hint) hint.textContent = hints[level] || "";
+  }
+
+  // Extract text from a PDF File object using PDF.js
+  async _extractPDFText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const typedArray = new Uint8Array(e.target.result);
+          const pdf = await pdfjsLib.getDocument({ data: typedArray }).promise;
+          let fullText = "";
+          for (let p = 1; p <= pdf.numPages; p++) {
+            const page = await pdf.getPage(p);
+            const content = await page.getTextContent();
+            fullText += content.items.map(s => s.str).join(" ") + "\n";
+          }
+          resolve(fullText.trim());
+        } catch(err) {
+          reject(err);
+        }
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  setupPDFNotesListeners() {
+    // Tab switching
+    const lectureBtn = document.getElementById("notes-src-lecture-btn");
+    const pdfBtn     = document.getElementById("notes-src-pdf-btn");
+    if (lectureBtn) lectureBtn.addEventListener("click", () => this._switchNotesTab("lecture"));
+    if (pdfBtn)     pdfBtn.addEventListener("click",     () => this._switchNotesTab("pdf"));
+
+    // Level switching
+    ["beginner", "intermediate", "expert"].forEach(l => {
+      const btn = document.getElementById(`level-${l}-btn`);
+      if (btn) btn.addEventListener("click", () => this._switchLevel(l));
+    });
+
+    // PDF file input
+    const fileInput = document.getElementById("pdf-file-input");
+    const dropzone  = document.getElementById("pdf-dropzone");
+
+    if (fileInput) {
+      fileInput.addEventListener("change", (e) => this._handlePDFFile(e.target.files[0]));
+    }
+
+    // Drag-and-drop
+    if (dropzone) {
+      dropzone.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropzone.style.background = "rgba(56,189,248,0.08)";
+      });
+      dropzone.addEventListener("dragleave", () => {
+        dropzone.style.background = "";
+      });
+      dropzone.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropzone.style.background = "";
+        const file = e.dataTransfer.files[0];
+        if (file && file.type === "application/pdf") this._handlePDFFile(file);
+        else alert("⚠️ Please drop a .pdf file.");
+      });
+    }
+
+    // Generate button
+    const genBtn = document.getElementById("generate-pdf-notes-btn");
+    if (genBtn) genBtn.addEventListener("click", () => this.generatePDFNotes());
+  }
+
+  async _handlePDFFile(file) {
+    if (!file) return;
+    const statusEl  = document.getElementById("pdf-file-status");
+    const nameEl    = document.getElementById("pdf-file-name");
+    const countEl   = document.getElementById("pdf-char-count");
+    const dropzone  = document.getElementById("pdf-dropzone");
+
+    if (dropzone) dropzone.innerHTML = `<div style="font-size:1.5rem;margin-bottom:6px;">⏳</div><div style="font-size:0.82rem;color:#38bdf8;font-weight:700;">Extracting text from PDF...</div>`;
+
+    try {
+      const text = await this._extractPDFText(file);
+      this._pdfExtractedText = text;
+      this._pdfFileName = file.name;
+      if (nameEl)  nameEl.textContent  = file.name;
+      if (countEl) countEl.textContent = text.length.toLocaleString();
+      if (statusEl) statusEl.style.display = "block";
+      if (dropzone) dropzone.innerHTML = `
+        <div style="font-size:1.5rem;margin-bottom:4px;">✅</div>
+        <div style="font-size:0.82rem;color:#10b981;font-weight:700;">${file.name}</div>
+        <div style="font-size:0.72rem;color:#64748b;margin-top:2px;">Click to choose a different file</div>
+        <input type="file" id="pdf-file-input" accept=".pdf" style="display:none;" />`;
+      // Re-bind the newly recreated input
+      const newInput = document.getElementById("pdf-file-input");
+      if (newInput) newInput.addEventListener("change", (e) => this._handlePDFFile(e.target.files[0]));
+      this.logDebug("PDF-EXTRACT", `Extracted ${text.length} chars from ${file.name}`);
+    } catch(err) {
+      if (dropzone) dropzone.innerHTML = `<div style="font-size:1.5rem;margin-bottom:4px;">❌</div><div style="font-size:0.82rem;color:#f87171;font-weight:700;">Failed to read PDF. Try another file.</div><input type="file" id="pdf-file-input" accept=".pdf" style="display:none;"/><div style="font-size:0.74rem;color:#64748b;margin-top:3px;">Click to retry</div>`;
+      const newInput = document.getElementById("pdf-file-input");
+      if (newInput) newInput.addEventListener("change", (e) => this._handlePDFFile(e.target.files[0]));
+      console.error("PDF parse error:", err);
+    }
+  }
+
+  async generatePDFNotes() {
+    if (!this._pdfExtractedText || !this._pdfExtractedText.trim()) {
+      alert("⚠️ Please upload a PDF first.");
+      return;
+    }
+
+    const level    = this._pdfLevel || "beginner";
+    const fileName = this._pdfFileName || "Uploaded PDF";
+
+    if (!this.notesContentBody) return;
+    this.notesContentBody.innerHTML = `
+      <div style="text-align:center; padding:40px; color:#a855f7;">
+        <div style="font-size:2.2rem; margin-bottom:12px;">🤖</div>
+        <div style="font-weight:700; font-size:1.1rem; margin-bottom:6px;">Generating ${level.charAt(0).toUpperCase()+level.slice(1)}-Level Personalised Notes...</div>
+        <div style="font-size:0.82rem; color:#94a3b8;">IBM Granite 3.0 AI is analysing your PDF content and adapting for <strong style="color:#c084fc;">${level}</strong> level...</div>
+      </div>`;
+
+    try {
+      const res = await fetch('/api/generate-pdf-notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdfText:  this._pdfExtractedText,
+          fileName: fileName,
+          level:    level,
+          targetLang: this.langSelect ? this.langSelect.value : "en"
+        })
+      });
+
+      const data = await res.json();
+      if (data && data.success && data.notesMarkdown) {
+        this.lastGeneratedMarkdown = data.notesMarkdown;
+        this.notesContentBody.innerHTML = this.renderMarkdownToHTML(data.notesMarkdown);
+        const badge = document.getElementById("notes-engine-badge");
+        if (badge) badge.textContent = `🤖 ${data.engine || "IBM Granite AI"} — ${level.toUpperCase()} Level`;
+        this.logDebug("PDF-NOTES", `Generated ${level} notes from PDF: ${fileName}`);
+        return;
+      }
+    } catch(e) {
+      console.error("PDF Notes Error:", e);
+    }
+
+    this.notesContentBody.innerHTML = `<div style="color:#f87171; text-align:center; padding:20px;">Failed to generate notes. Please try again.</div>`;
   }
 
   renderMarkdownToHTML(md) {

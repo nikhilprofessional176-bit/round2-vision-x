@@ -228,13 +228,14 @@
     <div class="title">
       <span>👨‍🏫</span> Teacher Live Control Panel & Whiteboard
     </div>
-    <div style="display: flex; align-items: center; gap: 12px;">
+    <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
       <div id="recording-indicator" class="recording-badge" style="display: none;">
         <span class="rec-dot"></span> REC LIVE
       </div>
       <button id="record-toggle-btn" class="record-btn">
         🔴 Start Recording
       </button>
+      <a href="teacher-analysis.html" style="display: inline-flex; align-items: center; gap: 6px; padding: 8px 16px; background: linear-gradient(135deg, #7c3aed, #a855f7); color: #fff; font-weight: 700; border: none; border-radius: 8px; font-size: 0.82rem; cursor: pointer; text-decoration: none; box-shadow: 0 4px 15px rgba(168,85,247,0.35);">📊 Analysis Dashboard</a>
       <div id="ws-status" class="status-badge">📡 CONNECTING...</div>
     </div>
   </header>
@@ -242,37 +243,77 @@
   <div class="main-grid">
     <!-- Left Column: Interactive Whiteboard Canvas -->
     <div class="panel">
-      <div class="canvas-toolbar">
-        <div class="tool-group">
-          <button id="tool-draw-btn" class="active" style="background:#38bdf8; color:#000;">✏️ Pen</button>
-          <button id="tool-pan-btn">🖐️ Pan Canvas</button>
-          <button id="reset-view-btn" title="Reset canvas view to origin (0,0)">🎯 Reset View</button>
-          
+
+      <!-- ══ ROW 1: Core Tools + Pan/Zoom ══ -->
+      <div class="canvas-toolbar" style="flex-wrap: wrap; gap: 6px; align-items:center;">
+        <div class="tool-group" style="flex-wrap: wrap; gap: 5px;">
+          <button id="tool-draw-btn" class="tool-btn active-tool" title="Freehand Pen">✏️ Pen</button>
+          <button id="tool-eraser-btn" class="tool-btn" title="Eraser">🧹 Eraser</button>
+          <button id="tool-line-btn" class="tool-btn" title="Straight Line">╱ Line</button>
+          <button id="tool-arrow-btn" class="tool-btn" title="Arrow">➡️ Arrow</button>
+          <button id="tool-dbl-arrow-btn" class="tool-btn" title="Double Arrow">↔️ Dbl</button>
+          <button id="tool-rect-btn" class="tool-btn" title="Rectangle">⬜ Rect</button>
+          <button id="tool-circle-btn" class="tool-btn" title="Circle / Ellipse">⭕ Circle</button>
+          <button id="tool-triangle-btn" class="tool-btn" title="Triangle">🔺 Tri</button>
+          <button id="tool-pan-btn" class="tool-btn" title="Pan Canvas">🖐️ Pan</button>
+
+          <!-- Shape Palette Button -->
+          <button id="open-shape-palette-btn" class="tool-btn" style="background:linear-gradient(135deg,rgba(99,102,241,0.25),rgba(168,85,247,0.25)); border-color:rgba(168,85,247,0.5); color:#c084fc;" title="Advanced Subject Shapes">🔷 Shapes▾</button>
+
+          <span style="width:1px; background:rgba(255,255,255,0.1); align-self:stretch; margin:0 2px;"></span>
+
+          <button id="reset-view-btn" title="Reset View">🎯</button>
           <button id="zoom-in-btn" title="Zoom In">➕</button>
           <button id="zoom-out-btn" title="Zoom Out">➖</button>
-          <button id="zoom-reset-btn" title="Reset Zoom to 100%">🔍 100%</button>
-          
+          <button id="zoom-reset-btn" title="100%">🔍</button>
           <span id="zoom-badge" style="font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:#38bdf8; font-weight:600;">100%</span>
-          <span id="pan-coords-badge" style="font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:#94a3b8; margin-left:4px;">Pan: (0, 0)</span>
+          <span id="pan-coords-badge" style="font-family:'JetBrains Mono',monospace; font-size:0.75rem; color:#94a3b8;">Pan: (0, 0)</span>
         </div>
 
-        <div class="tool-group">
-          <label>Pen Color:</label>
+        <div class="tool-group" style="flex-wrap:wrap; gap:6px;">
+          <label style="font-size:0.78rem;">Color:</label>
           <input type="color" id="color-picker" value="#38bdf8">
-
-          <label>Size:</label>
+          <label style="font-size:0.78rem;">Fill:</label>
+          <input type="color" id="fill-color-picker" value="#1e3a5f">
+          <input type="checkbox" id="fill-toggle" style="width:14px;height:14px;cursor:pointer;" title="Enable fill">
+          <label for="fill-toggle" style="font-size:0.78rem;">Fill</label>
+          <label style="font-size:0.78rem;">Size:</label>
           <select id="size-picker">
-            <option value="2">Thin (2px)</option>
-            <option value="4" selected>Medium (4px)</option>
-            <option value="8">Thick (8px)</option>
+            <option value="2">2px</option>
+            <option value="4" selected>4px</option>
+            <option value="8">8px</option>
+            <option value="12">12px</option>
           </select>
-
-          <button id="clear-btn">🧹 Clear Canvas</button>
+          <button id="clear-btn">🗑️ Clear</button>
         </div>
       </div>
 
+      <!-- ══ Active Shape Badge ══ -->
+      <div id="active-shape-badge" style="display:none; font-size:0.75rem; font-weight:700; color:#c084fc; background:rgba(168,85,247,0.12); border:1px solid rgba(168,85,247,0.35); border-radius:6px; padding:3px 10px; margin-bottom:6px;">
+        Active: <span id="active-shape-name">—</span> &nbsp;
+        <button onclick="window.teacherApp.clearAdvancedTool()" style="padding:1px 6px; background:rgba(244,63,94,0.2); color:#f43f5e; border:1px solid rgba(244,63,94,0.3); border-radius:4px; font-size:0.7rem; cursor:pointer;">✕ Cancel</button>
+      </div>
+
+      <!-- ══ ROW 2: Presentation & Media Tools ══ -->
+      <div style="display:flex; align-items:center; gap:8px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.07); margin-bottom:8px; flex-wrap:wrap;">
+        <!-- File Upload -->
+        <button id="upload-doc-btn" style="padding:6px 12px; background:linear-gradient(135deg,#7c3aed,#a855f7); color:#fff; border:none; border-radius:7px; font-size:0.8rem; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:5px;">📁 Upload Slides / PDF</button>
+        <input type="file" id="doc-file-input" accept=".pdf,.png,.jpg,.jpeg,.webp,.svg" style="display:none;" />
+
+        <!-- Slide Navigation (hidden until slides loaded) -->
+        <div id="slide-nav" style="display:none; align-items:center; gap:6px;">
+          <button id="slide-prev-btn" style="padding:5px 10px; background:#1e293b; color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:6px; font-size:0.8rem; cursor:pointer;">◀ Prev</button>
+          <span id="slide-counter" style="font-family:'JetBrains Mono',monospace; font-size:0.78rem; color:#38bdf8; font-weight:700;">Slide 1 of 1</span>
+          <button id="slide-next-btn" style="padding:5px 10px; background:#1e293b; color:#fff; border:1px solid rgba(255,255,255,0.15); border-radius:6px; font-size:0.8rem; cursor:pointer;">Next ▶</button>
+          <button id="slide-clear-btn" style="padding:5px 10px; background:rgba(244,63,94,0.15); color:#f43f5e; border:1px solid rgba(244,63,94,0.3); border-radius:6px; font-size:0.8rem; cursor:pointer;">✕ Clear Slides</button>
+        </div>
+
+        <!-- Diagram Search -->
+        <button id="search-diagram-btn" style="padding:6px 12px; background:linear-gradient(135deg,#0369a1,#38bdf8); color:#000; border:none; border-radius:7px; font-size:0.8rem; font-weight:700; cursor:pointer; display:flex; align-items:center; gap:5px; margin-left:auto;">🔍 Search Diagram</button>
+      </div>
+
       <div class="canvas-wrapper" style="position: relative; flex: 1; display: flex; width: 100%;">
-        <!-- Sleek Floating Bell Icon for Student Live Doubts on Teacher Canvas -->
+        <!-- Floating Bell -->
         <button id="teacher-doubts-btn" style="position: absolute; top: 12px; right: 14px; z-index: 20; background: rgba(9, 13, 22, 0.88); backdrop-filter: blur(10px); border: 1px solid rgba(245, 158, 11, 0.6); color: #f59e0b; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.6), 0 0 20px rgba(245,158,11,0.3); transition: transform 0.2s;" title="View Student Live Doubts">
           <span style="font-size: 1.25rem;">🔔</span>
           <span id="doubt-badge" style="position: absolute; top: -4px; right: -4px; background: #f43f5e; color: #fff; border-radius: 50%; min-width: 20px; height: 20px; font-size: 0.72rem; font-weight: 800; display: none; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid #060911; box-shadow: 0 0 10px rgba(244,63,94,0.9);">0</span>
@@ -341,7 +382,6 @@
   <!-- Teacher Live Student Doubts Modal -->
   <div id="teacher-doubts-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(4, 6, 12, 0.85); backdrop-filter: blur(12px); z-index: 99999; align-items: center; justify-content: center;">
     <div style="max-width: 580px; width: 92%; max-height: 85vh; padding: 24px; background: rgba(9, 13, 22, 0.98); backdrop-filter: blur(20px); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.9), 0 0 30px rgba(245,158,11,0.25); display: flex; flex-direction: column; position: relative;">
-      
       <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 16px;">
         <div style="display: flex; align-items: center; gap: 10px;">
           <span style="font-size: 1.6rem;">🔔</span>
@@ -352,15 +392,170 @@
         </div>
         <button id="close-teacher-doubts-modal-btn" style="background: rgba(255,255,255,0.1); border: none; color: #94a3b8; border-radius: 50%; width: 28px; height: 28px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center;">✕</button>
       </div>
-
-      <!-- Doubts Container -->
       <div id="teacher-doubts-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; max-height: 60vh;">
-        <div style="text-align: center; color: #94a3b8; padding: 30px; font-size: 0.88rem;">
-          🔔 No unread student doubts right now!
+        <div style="text-align: center; color: #94a3b8; padding: 30px; font-size: 0.88rem;">🔔 No unread student doubts right now!</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Diagram Search Modal
+  ════════════════════════════════════════════════════════════════════ -->
+  <div id="diagram-search-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(4,6,12,0.88); backdrop-filter:blur(14px); z-index:99999; align-items:center; justify-content:center;">
+    <div style="max-width:720px; width:94%; max-height:88vh; padding:24px; background:rgba(9,13,22,0.98); backdrop-filter:blur(20px); border:1px solid rgba(56,189,248,0.35); border-radius:20px; box-shadow:0 20px 50px rgba(0,0,0,0.9),0 0 30px rgba(56,189,248,0.2); display:flex; flex-direction:column; gap:14px;">
+
+      <!-- Header -->
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.5rem;">🔍</span>
+          <div>
+            <h3 style="color:#38bdf8; font-size:1.1rem; font-weight:800; margin:0;">Diagram Search & Overlay</h3>
+            <div style="font-size:0.74rem; color:#94a3b8;">Search Wikimedia/web for educational diagrams and overlay on whiteboard</div>
+          </div>
+        </div>
+        <button id="close-diagram-modal-btn" style="background:rgba(255,255,255,0.1); border:none; color:#94a3b8; border-radius:50%; width:28px; height:28px; font-size:0.9rem; cursor:pointer; display:flex; align-items:center; justify-content:center;">✕</button>
+      </div>
+
+      <!-- Search Bar -->
+      <div style="display:flex; gap:8px;">
+        <input type="text" id="diagram-search-input" placeholder="e.g. Binary search tree, Human heart, Photosynthesis diagram..." style="flex:1; padding:10px 14px; background:#060911; border:1px solid rgba(56,189,248,0.3); border-radius:8px; color:#fff; font-size:0.85rem; outline:none;" />
+        <button id="diagram-search-execute-btn" style="padding:10px 18px; background:linear-gradient(135deg,#0284c7,#38bdf8); color:#000; font-weight:800; border:none; border-radius:8px; cursor:pointer; font-size:0.85rem;">🔍 Search</button>
+      </div>
+
+      <!-- Suggested Quick Tags -->
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <span style="font-size:0.74rem; color:#94a3b8; align-self:center;">Quick:</span>
+        <button class="diag-tag" onclick="window.teacherApp.runDiagramSearch('Binary Search Tree diagram')">🌲 BST</button>
+        <button class="diag-tag" onclick="window.teacherApp.runDiagramSearch('Linked list data structure')">🔗 Linked List</button>
+        <button class="diag-tag" onclick="window.teacherApp.runDiagramSearch('TCP IP OSI model layers')">🌐 TCP/IP</button>
+        <button class="diag-tag" onclick="window.teacherApp.runDiagramSearch('Recursion call stack')">♻️ Recursion</button>
+        <button class="diag-tag" onclick="window.teacherApp.runDiagramSearch('Operating system process states')">💻 OS States</button>
+        <button class="diag-tag" onclick="window.teacherApp.runDiagramSearch('Sorting algorithm bubble sort visualization')">🔢 Sort</button>
+        <button class="diag-tag" onclick="window.teacherApp.runDiagramSearch('Human heart cross section anatomy')">❤️ Heart</button>
+        <button class="diag-tag" onclick="window.teacherApp.runDiagramSearch('Photosynthesis diagram plant')">🌿 Photosynthesis</button>
+      </div>
+
+      <!-- Results Grid -->
+      <div id="diagram-results-grid" style="flex:1; overflow-y:auto; display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:10px; max-height:380px; min-height:120px;">
+        <div style="grid-column:1/-1; text-align:center; color:#94a3b8; padding:30px; font-size:0.85rem;">
+          🔍 Search for a diagram above to see results. Click any image to overlay it on the whiteboard for all students.
         </div>
       </div>
     </div>
   </div>
+
+  <style>
+    /* ══ Tool Buttons ══ */
+    .tool-btn {
+      padding: 6px 10px; border-radius: 7px; font-size: 0.8rem; font-weight: 700;
+      background: #1e293b; color: #f8fafc; border: 1px solid rgba(255,255,255,0.12);
+      cursor: pointer; transition: all 0.15s ease; white-space: nowrap;
+    }
+    .tool-btn:hover { background: rgba(56,189,248,0.15); border-color: rgba(56,189,248,0.4); color: #38bdf8; }
+    .active-tool { background: #38bdf8 !important; color: #000 !important; border-color: #38bdf8 !important; }
+
+    /* ══ Diagram Tag Buttons ══ */
+    .diag-tag {
+      padding: 4px 10px; background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.25);
+      border-radius: 20px; color: #38bdf8; font-size: 0.74rem; font-weight: 700; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .diag-tag:hover { background: rgba(56,189,248,0.25); }
+
+    /* ══ Diagram Result Card ══ */
+    .diag-result-card {
+      border-radius: 10px; overflow: hidden; border: 1px solid rgba(255,255,255,0.1);
+      cursor: pointer; transition: all 0.18s ease; background: rgba(255,255,255,0.03);
+      display: flex; flex-direction: column;
+    }
+    .diag-result-card:hover { border-color: #38bdf8; box-shadow: 0 0 14px rgba(56,189,248,0.3); transform: translateY(-2px); }
+    .diag-result-card img { width:100%; height:110px; object-fit:cover; display:block; background:#0d1525; }
+    .diag-result-card .diag-caption { padding:5px 7px; font-size:0.7rem; color:#94a3b8; line-height:1.3; }
+  </style>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Universal Shape Palette Modal
+  ════════════════════════════════════════════════════════════════════ -->
+  <div id="shape-palette-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(4,6,12,0.88); backdrop-filter:blur(14px); z-index:99999; align-items:flex-start; justify-content:center; padding-top:60px;">
+    <div style="max-width:800px; width:96%; max-height:82vh; background:rgba(9,13,22,0.98); backdrop-filter:blur(20px); border:1px solid rgba(168,85,247,0.4); border-radius:20px; box-shadow:0 20px 60px rgba(0,0,0,0.95),0 0 40px rgba(168,85,247,0.15); display:flex; flex-direction:column; overflow:hidden;">
+
+      <!-- Modal Header -->
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:16px 22px; border-bottom:1px solid rgba(255,255,255,0.08);">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:1.4rem;">🔷</span>
+          <div>
+            <div style="color:#c084fc; font-size:1rem; font-weight:800;">Universal Subject Shape Engine</div>
+            <div style="color:#64748b; font-size:0.72rem;">Click any shape to activate → then drag on canvas to place</div>
+          </div>
+        </div>
+        <button id="close-shape-palette-btn" style="background:rgba(255,255,255,0.08); border:none; color:#94a3b8; border-radius:50%; width:28px; height:28px; font-size:0.9rem; cursor:pointer;">✕</button>
+      </div>
+
+      <!-- Category Tabs -->
+      <div style="display:flex; gap:4px; padding:10px 16px; background:rgba(255,255,255,0.02); border-bottom:1px solid rgba(255,255,255,0.06); flex-wrap:wrap;">
+        <button class="sp-tab sp-tab-active" data-cat="geometry">📐 Geometry</button>
+        <button class="sp-tab" data-cat="math">📈 Math & Grids</button>
+        <button class="sp-tab" data-cat="chart">📊 Charts</button>
+        <button class="sp-tab" data-cat="physics">⚡ Physics</button>
+        <button class="sp-tab" data-cat="chemistry">🧪 Chemistry</button>
+        <button class="sp-tab" data-cat="cs">💻 CS / Flowchart</button>
+      </div>
+
+      <!-- Shape Grid (content injected by JS) -->
+      <div id="shape-palette-grid" style="flex:1; overflow-y:auto; padding:16px; display:grid; grid-template-columns:repeat(auto-fill,minmax(110px,1fr)); gap:10px;"></div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Chart Data Input Modal (Bar / Pie / Line)
+  ════════════════════════════════════════════════════════════════════ -->
+  <div id="chart-data-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(4,6,12,0.88); backdrop-filter:blur(14px); z-index:99999; align-items:center; justify-content:center;">
+    <div style="max-width:460px; width:94%; padding:24px; background:rgba(9,13,22,0.98); border:1px solid rgba(56,189,248,0.35); border-radius:20px; box-shadow:0 20px 60px rgba(0,0,0,0.95); display:flex; flex-direction:column; gap:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="color:#38bdf8; font-size:1rem; font-weight:800;" id="chart-modal-title">📊 Bar Chart Data</div>
+        <button id="close-chart-modal-btn" style="background:rgba(255,255,255,0.08); border:none; color:#94a3b8; border-radius:50%; width:28px; height:28px; cursor:pointer;">✕</button>
+      </div>
+      <div style="font-size:0.78rem; color:#64748b;">Enter comma-separated labels and values (e.g. "A,B,C" and "30,55,20")</div>
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <label style="font-size:0.78rem; color:#94a3b8;">Labels (comma-separated):</label>
+        <input type="text" id="chart-labels-input" placeholder="Jan, Feb, Mar, Apr" style="padding:9px 12px; background:#060911; border:1px solid rgba(255,255,255,0.2); border-radius:7px; color:#fff; font-size:0.82rem; outline:none;" />
+        <label style="font-size:0.78rem; color:#94a3b8;">Values (comma-separated numbers):</label>
+        <input type="text" id="chart-values-input" placeholder="45, 78, 32, 90" style="padding:9px 12px; background:#060911; border:1px solid rgba(255,255,255,0.2); border-radius:7px; color:#fff; font-size:0.82rem; outline:none;" />
+        <label style="font-size:0.78rem; color:#94a3b8;">Chart Title (optional):</label>
+        <input type="text" id="chart-title-input" placeholder="My Chart" style="padding:9px 12px; background:#060911; border:1px solid rgba(255,255,255,0.2); border-radius:7px; color:#fff; font-size:0.82rem; outline:none;" />
+      </div>
+      <button id="chart-confirm-btn" style="padding:11px; background:linear-gradient(135deg,#0284c7,#38bdf8); color:#000; font-weight:800; border:none; border-radius:10px; cursor:pointer; font-size:0.9rem;">✅ Place Chart on Canvas</button>
+    </div>
+  </div>
+
+  <style>
+    /* ══ Shape Palette Tab Buttons ══ */
+    .sp-tab {
+      padding: 6px 14px; border-radius: 20px; font-size: 0.78rem; font-weight: 700;
+      background: transparent; color: #64748b; border: 1px solid transparent; cursor: pointer; transition: all 0.15s;
+    }
+    .sp-tab:hover { color: #c084fc; border-color: rgba(168,85,247,0.3); }
+    .sp-tab-active { background: rgba(168,85,247,0.18) !important; color: #c084fc !important; border-color: rgba(168,85,247,0.45) !important; }
+
+    /* ══ Shape Card in Palette ══ */
+    .sp-card {
+      background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px; padding: 10px 6px; display: flex; flex-direction: column;
+      align-items: center; gap: 6px; cursor: pointer; transition: all 0.15s ease; text-align: center;
+    }
+    .sp-card:hover { background: rgba(168,85,247,0.1); border-color: rgba(168,85,247,0.45); transform: translateY(-2px); }
+    .sp-card.sp-selected { background: rgba(168,85,247,0.2) !important; border-color: #c084fc !important; }
+    .sp-card .sp-icon { font-size: 1.5rem; }
+    .sp-card .sp-label { font-size: 0.68rem; color: #94a3b8; font-weight: 600; line-height: 1.2; }
+  </style>
+
+  <!-- PDF.js CDN for client-side PDF rendering -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+    if (typeof pdfjsLib !== 'undefined') {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+  </script>
 
   <script src="teacher.js"></script>
 </body>
