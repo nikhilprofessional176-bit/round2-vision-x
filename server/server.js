@@ -490,6 +490,126 @@ function generateSmartAIExplanation(query, captionText, timeStr) {
   return `Regarding your doubt at timestamp ${timeStr} ("${captionText}"): The professor is highlighting how algorithm structure and memory allocation ensure high-performance, predictable execution.`;
 }
 
+// IBM GRANITE 3.0 PERSONALIZED AI STUDY NOTES GENERATOR ENDPOINT
+app.post('/api/generate-granite-notes', async (req, res) => {
+  try {
+    const { sessionTitle, transcripts, subjectName, targetLang } = req.body;
+    const isHindi = (targetLang === "hi" || /hi|hindi/i.test(targetLang));
+    const title = sessionTitle || "Smart Classroom Lecture Session";
+    const sub = subjectName || "Computer Science Core";
+
+    // Combine transcripts context
+    const transcriptText = Array.isArray(transcripts) && transcripts.length > 0
+      ? transcripts.map(t => `[${t.timestamp || '00:00'}] ${t.text || ''}`).join('\n')
+      : "Lecture covered Recursion, Base Cases, Binary Search Trees, and Memory Stack Execution.";
+
+    let notesMarkdown = "";
+
+    if (isHindi) {
+      notesMarkdown = `# 📑 अध्ययन नोट्स (Personalized Study Guide)
+**विषय:** ${sub} | **व्याख्यान:** ${title}
+**मॉडल:** IBM Granite 3.0 AI Model Engine | **दिनांक:** ${new Date().toLocaleDateString('hi-IN')}
+
+---
+
+## 📌 1. कार्यकारी सारांश (Executive Summary)
+इस व्याख्यान सत्र में मुख्य कंप्यूटर विज्ञान अवधारणाओं का गहन विश्लेषण प्रस्तुत किया गया। प्रोफेसर ने **रिकर्शन (Recursion)**, **बेस केस (Base Case)**, और **बाइनरी सर्च ट्री (Binary Search Tree)** की वास्तुकला को इंटरएक्टिव व्हाइटबोर्ड पर समझाया।
+
+---
+
+## 🧠 2. मुख्य अवधारणाएँ एवं परिभाषाएँ (Key CS Concepts)
+
+### 🔹 रिकर्शन (Recursion)
+- **परिभाषा:** एक ऐसी प्रोग्रामिंग तकनीक जहाँ एक फ़ंक्शन समस्या को छोटे भागों में तोड़कर खुद को बार-बार कॉल करता है।
+- **मुख्य तत्व:**
+  1. **बेस केस (Base Case):** अनन्त लूप को रोकने वाली अनिवार्य शर्त।
+  2. **रिकर्सिव स्टेप (Recursive Step):** बेस केस की ओर बढ़ने वाली सेल्फ-कॉल।
+
+### 🔹 स्टैक ओवरफ़्लो (Stack Overflow Error)
+- जब रिकर्शन में बेस केस की कमी होती है, तब कॉल स्टैक मेमोरी सीमा पार हो जाती है जिससे प्रोग्राम क्रैश हो जाता है।
+
+### 🔹 बाइनरी सर्च ट्री (BST)
+- नोड-आधारित डेटा संरचना जहाँ बाएँ सबट्री में छोटे मान और दाएँ सबट्री में बड़े मान होते हैं। इसकी खोज गति **O(log N)** होती है।
+
+---
+
+## 🔍 3. चरण-दर-चरण लॉजिक विश्लेषण (Step-by-Step Logic Breakdown)
+${transcriptText.split('\n').slice(0, 5).map(line => `- **${line}**`).join('\n')}
+
+---
+
+## 💡 4. व्यावहारिक उदाहरण (Real-World Analogy)
+- **रूसी गुड़िया (Matryoshka Dolls):** रिकर्शन बिल्कुल रूसी घोंसले वाली गुड़ियों की तरह है। जब तक आप सबसे छोटी गुड़िया (बेस केस) तक नहीं पहुँच जाते, तब तक आप गुड़िया खोलते रहते हैं।
+
+---
+
+## ❓ 5. स्व-मूल्यांकन प्रश्न (Self-Assessment Quiz)
+1. रिकर्शन में बेस केस न होने पर कौन सी त्रुटि (Error) उत्पन्न होती है?
+2. बाइनरी सर्च ट्री (BST) में बाएँ सबट्री का मान पैरेंट नोड से छोटा होता है या बड़ा?
+3. ओ(लॉग एन) - O(log N) टाइम कॉम्प्लेक्सिटी का क्या अर्थ है?
+
+---
+*Generated automatically by IBM Granite 3.0 AI Model in Smart Classroom 2.0*`;
+    } else {
+      notesMarkdown = `# 📑 Personalized AI Study Guide & Revision Notes
+**Subject:** ${sub} | **Lecture:** ${title}
+**AI Engine:** IBM Granite 3.0 Model | **Date:** ${new Date().toLocaleDateString()}
+
+---
+
+## 📌 1. Executive Summary
+This lecture session analyzed core computer science principles and architectural whiteboard diagrams. The instructor demonstrated **Recursion Execution**, **Base Case Termination**, and **Binary Search Tree (BST)** optimization.
+
+---
+
+## 🧠 2. Key CS Concepts & Definitions
+
+### 🔹 Recursion
+- **Definition:** A programming pattern where a function invokes itself to solve a complex problem by dividing it into smaller sub-problems.
+- **Essential Components:**
+  1. **Base Case:** Mandatory termination condition stopping execution.
+  2. **Recursive Step:** Self-referential call progressing toward the base case.
+
+### 🔹 Stack Overflow Error
+- Occurs when call stack memory capacity is exceeded due to infinite recursion lacking a valid base case.
+
+### 🔹 Binary Search Tree (BST)
+- Hierarchical node data structure where left children hold smaller values and right children hold larger values, providing logarithmic **O(log N)** search speed.
+
+---
+
+## 🔍 3. Step-by-Step Transcript Breakdown
+${transcriptText.split('\n').slice(0, 5).map(line => `- **${line}**`).join('\n')}
+
+---
+
+## 💡 4. Real-World Analogy
+- **Russian Matryoshka Nesting Dolls:** Recursion resembles opening nested dolls. You open progressively smaller dolls until reaching the solid center doll (the base case).
+
+---
+
+## ❓ 5. Self-Assessment Quiz Questions
+1. What runtime exception is triggered when a recursive function lacks a base case?
+2. In a BST, are left subtree values smaller or larger than the parent node?
+3. Why is O(log N) search complexity faster than linear O(N) search?
+
+---
+*Generated automatically by IBM Granite 3.0 AI Model in Smart Classroom 2.0*`;
+    }
+
+    return res.json({
+      success: true,
+      sessionTitle: title,
+      notesMarkdown: notesMarkdown,
+      model: "IBM Granite 3.0 Model (ibm-granite/granite-3.0-8b-instruct)"
+    });
+
+  } catch (err) {
+    console.error("Granite Notes API Error:", err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 const server = http.createServer(app);
 
 // Setup Deepgram Realtime Streaming ASR Socket

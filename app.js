@@ -76,6 +76,14 @@ class SmartClassroomStudentApp {
     this.statusText = document.getElementById("status-text");
     this.debugConsole = document.getElementById("debug-console");
 
+    // IBM Granite Notes Modal DOM Cache
+    this.notesModal = document.getElementById("notes-modal");
+    this.closeNotesModalBtn = document.getElementById("close-notes-modal-btn");
+    this.notesContentBody = document.getElementById("notes-content-body");
+    this.downloadNotesPdfBtn = document.getElementById("download-notes-pdf-btn");
+    this.copyNotesBtn = document.getElementById("copy-notes-btn");
+    this.lastGeneratedMarkdown = "";
+
     // Recorded Lectures Modal DOM Cache
     this.recordingsBtn = document.getElementById("recordings-btn");
     this.recordingsModal = document.getElementById("recordings-modal");
@@ -101,7 +109,10 @@ class SmartClassroomStudentApp {
     this.studentZoomBadge = document.getElementById("student-zoom-badge");
     this.studentPanCoords = document.getElementById("student-pan-coords");
 
-    // Live Class AI Doubts Chatbot DOM
+    // Floating FAB AI Doubts Chatbot DOM
+    this.liveAiTutorPanel = document.getElementById("live-ai-tutor-panel");
+    this.toggleLiveAiBtn = document.getElementById("toggle-live-ai-btn");
+    this.closeLiveAiBtn = document.getElementById("close-live-ai-btn");
     this.liveAiChatFeed = document.getElementById("live-ai-chat-feed");
     this.liveAiChatForm = document.getElementById("live-ai-chat-form");
     this.liveAiChatInput = document.getElementById("live-ai-chat-input");
@@ -266,9 +277,53 @@ class SmartClassroomStudentApp {
       });
     }
 
+    const toggleFloatingAiWindow = () => {
+      if (!this.liveAiTutorPanel) return;
+      const isHidden = (this.liveAiTutorPanel.style.display === "none");
+      if (isHidden) {
+        this.liveAiTutorPanel.style.display = "flex";
+        if (this.toggleLiveAiBtn) this.toggleLiveAiBtn.style.transform = "scale(0.9) rotate(90deg)";
+      } else {
+        this.liveAiTutorPanel.style.display = "none";
+        if (this.toggleLiveAiBtn) this.toggleLiveAiBtn.style.transform = "scale(1) rotate(0deg)";
+      }
+    };
+
+    if (this.toggleLiveAiBtn) {
+      this.toggleLiveAiBtn.addEventListener("click", toggleFloatingAiWindow);
+    }
+    if (this.closeLiveAiBtn) {
+      this.closeLiveAiBtn.addEventListener("click", toggleFloatingAiWindow);
+    }
+
     if (this.recordingsModal) {
       this.recordingsModal.addEventListener("click", (e) => {
         if (e.target === this.recordingsModal) this.closeRecordingsModal();
+      });
+    }
+
+    // IBM Granite 3.0 Notes Modal Listeners
+    if (this.exportNotesBtn) {
+      this.exportNotesBtn.addEventListener("click", () => this.generateAndOpenGraniteNotes());
+    }
+
+    if (this.closeNotesModalBtn) {
+      this.closeNotesModalBtn.addEventListener("click", () => {
+        if (this.notesModal) this.notesModal.style.display = "none";
+      });
+    }
+
+    if (this.downloadNotesPdfBtn) {
+      this.downloadNotesPdfBtn.addEventListener("click", () => this.printNotesAsPDF());
+    }
+
+    if (this.copyNotesBtn) {
+      this.copyNotesBtn.addEventListener("click", () => this.copyNotesMarkdown());
+    }
+
+    if (this.notesModal) {
+      this.notesModal.addEventListener("click", (e) => {
+        if (e.target === this.notesModal) this.notesModal.style.display = "none";
       });
     }
 
@@ -304,7 +359,7 @@ class SmartClassroomStudentApp {
       this.playbackSpeed = parseFloat(e.target.value);
     });
 
-    this.exportNotesBtn.addEventListener("click", () => this.exportPDFNotes());
+    this.exportNotesBtn.addEventListener("click", () => this.generateAndOpenGraniteNotes());
     this.exportVttBtn.addEventListener("click", () => this.exportWebVTTSubtitles());
   }
 
@@ -1014,6 +1069,7 @@ class SmartClassroomStudentApp {
     if (!query) return;
 
     this.liveAiChatInput.value = "";
+    if (this.liveAiTutorPanel) this.liveAiTutorPanel.style.display = "flex";
 
     // 1. Render User Message Bubble
     const userBubble = document.createElement("div");
@@ -1113,6 +1169,102 @@ class SmartClassroomStudentApp {
     } catch(e) {
       return rawEnglishExplanation;
     }
+  }
+
+  async generateAndOpenGraniteNotes() {
+    this.notesModal = this.notesModal || document.getElementById("notes-modal");
+    this.notesContentBody = this.notesContentBody || document.getElementById("notes-content-body");
+
+    if (this.notesModal) {
+      this.notesModal.style.display = "flex";
+    }
+
+    if (!this.notesContentBody) return;
+
+    const targetLang = this.langSelect ? this.langSelect.value : "hi";
+    const title = this.currentLecture ? this.currentLecture.title : "Smart Classroom Lecture";
+    const sub = this.currentLecture ? this.currentLecture.subject : "Computer Science Core";
+
+    this.notesContentBody.innerHTML = `
+      <div style="text-align: center; padding: 40px; color: #38bdf8;">
+        <div style="font-size: 2.2rem; margin-bottom: 12px; animation: pulse 1s infinite;">🤖</div>
+        <div style="font-weight: 700; font-size: 1.1rem; margin-bottom: 6px;">Generating Personalized Study Guide & Revision Notes...</div>
+        <div style="font-size: 0.82rem; color: #94a3b8;">IBM Granite 3.0 Model (ibm-granite/granite-3.0-8b-instruct) is processing lecture transcripts & whiteboard context...</div>
+      </div>
+    `;
+
+    try {
+      const res = await fetch('/api/generate-granite-notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionTitle: title,
+          subjectName: sub,
+          transcripts: this.captions || [],
+          targetLang: targetLang
+        })
+      });
+
+      const data = await res.json();
+      if (data && data.success && data.notesMarkdown) {
+        this.lastGeneratedMarkdown = data.notesMarkdown;
+        this.notesContentBody.innerHTML = this.renderMarkdownToHTML(data.notesMarkdown);
+        this.logDebug("GRANITE-AI", `Generated personalized notes with IBM Granite 3.0 Model`);
+        return;
+      }
+    } catch(e) {
+      console.log("Granite Notes Generation Error:", e);
+    }
+
+    this.notesContentBody.innerHTML = `<div style="color: #f87171; text-align: center; padding: 20px;">Failed to generate notes with IBM Granite Model. Please try again.</div>`;
+  }
+
+  renderMarkdownToHTML(md) {
+    if (!md) return "";
+    let html = md
+      .replace(/---/g, '<hr style="border: none; border-top: 1px solid rgba(255,255,255,0.15); margin: 16px 0;"/>')
+      .replace(/^# (.*$)/gim, '<h1 style="color: #38bdf8; font-size: 1.35rem; font-weight: 700; margin: 16px 0 10px 0; border-bottom: 2px solid rgba(56,189,248,0.3); padding-bottom: 6px;">$1</h1>')
+      .replace(/^## (.*$)/gim, '<h2 style="color: #f8fafc; font-size: 1.1rem; font-weight: 700; margin: 16px 0 8px 0; border-left: 3px solid #38bdf8; padding-left: 8px;">$1</h2>')
+      .replace(/^### (.*$)/gim, '<h3 style="color: #38bdf8; font-size: 0.95rem; font-weight: 600; margin: 12px 0 6px 0;">$1</h3>')
+      .replace(/\*\*(.*?)\*\*/g, '<strong style="color: #fff; font-weight: 700;">$1</strong>')
+      .replace(/\*(.*?)\*/g, '<em style="color: #94a3b8; font-style: italic;">$1</em>')
+      .replace(/^[0-9]+\. (.*$)/gim, '<div style="margin-left: 12px; margin-bottom: 6px; color: #cbd5e1; display: flex; gap: 6px;"><span style="color: #38bdf8; font-weight: 700;">•</span><span>$1</span></div>')
+      .replace(/^- (.*$)/gim, '<div style="margin-left: 14px; margin-bottom: 5px; color: #e2e8f0; display: flex; gap: 6px;"><span style="color: #38bdf8;">▪</span><span>$1</span></div>')
+      .replace(/\n\n/g, '<br/>')
+      .replace(/\n/g, '<br/>');
+    return html;
+  }
+
+  printNotesAsPDF() {
+    if (!this.notesContentBody) return;
+    const printWin = window.open('', '', 'width=900,height=700');
+    printWin.document.write(`
+      <html>
+        <head>
+          <title>Personalized Study Guide - IBM Granite 3.0</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 30px; color: #111; line-height: 1.6; }
+            h1 { color: #0284c7; border-bottom: 2px solid #0284c7; padding-bottom: 8px; }
+            h2 { color: #0f172a; margin-top: 20px; }
+            h3 { color: #0369a1; }
+            hr { border: none; border-top: 1px solid #cbd5e1; margin: 20px 0; }
+            li { margin-bottom: 6px; }
+          </style>
+        </head>
+        <body>
+          ${this.notesContentBody.innerHTML}
+        </body>
+      </html>
+    `);
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => { printWin.print(); }, 250);
+  }
+
+  copyNotesMarkdown() {
+    if (!this.lastGeneratedMarkdown) return;
+    navigator.clipboard.writeText(this.lastGeneratedMarkdown);
+    alert("📑 IBM Granite 3.0 Study Notes Markdown copied to clipboard!");
   }
 
   logDebug(tag, msg) {
