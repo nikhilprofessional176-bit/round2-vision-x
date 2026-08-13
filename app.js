@@ -395,11 +395,20 @@ class SmartClassroomStudentApp {
   // WebSocket Core Client & Reconnection Engine
   // =========================================================================
   getWebSocketUrl() {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-      ? `${window.location.hostname}:5000`
-      : window.location.host;
-    return `${protocol}//${host}?role=student&sessionId=${this.currentSessionId}`;
+    const loc = window.location;
+    if ((loc.hostname === "localhost" || loc.hostname === "127.0.0.1") && loc.port === "5000") {
+      const protocol = loc.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${loc.host}?role=student&sessionId=${this.currentSessionId}`;
+    }
+    return `wss://smart-classroom-platform-1j6d.onrender.com?role=student&sessionId=${this.currentSessionId}`;
+  }
+
+  getApiBaseUrl() {
+    const loc = window.location;
+    if ((loc.hostname === "localhost" || loc.hostname === "127.0.0.1") && loc.port === "5000") {
+      return `${loc.protocol}//${loc.host}`;
+    }
+    return "https://smart-classroom-platform-1j6d.onrender.com";
   }
 
   connectWebSocket() {
@@ -1161,7 +1170,7 @@ class SmartClassroomStudentApp {
     this.logDebug("LIBRARY", "Opening Recorded Lectures Library...");
 
     try {
-      const response = await fetch('/api/subjects');
+      const response = await fetch(`${this.getApiBaseUrl()}/api/subjects`);
       const data = await response.json();
       this.cachedSubjects = (data.success && data.subjects) ? data.subjects : [];
       this.populateSubjectFilter(this.cachedSubjects);
@@ -1580,7 +1589,7 @@ class SmartClassroomStudentApp {
     `;
 
     try {
-      const res = await fetch('/api/generate-granite-notes', {
+      const res = await fetch(`${this.getApiBaseUrl()}/api/generate-granite-notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1762,7 +1771,7 @@ class SmartClassroomStudentApp {
       </div>`;
 
     try {
-      const res = await fetch('/api/generate-pdf-notes', {
+      const res = await fetch(`${this.getApiBaseUrl()}/api/generate-pdf-notes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1931,7 +1940,7 @@ class SmartClassroomStudentApp {
         const password = document.getElementById("login-password").value;
 
         try {
-          const res = await fetch('/api/auth/login', {
+          const res = await fetch(`${this.getApiBaseUrl()}/api/auth/login`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
@@ -1968,7 +1977,7 @@ class SmartClassroomStudentApp {
         }
 
         try {
-          const res = await fetch('/api/auth/signup', {
+          const res = await fetch(`${this.getApiBaseUrl()}/api/auth/signup`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, email, studentCode, rollNumber, password })

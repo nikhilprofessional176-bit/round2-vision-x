@@ -1572,10 +1572,12 @@ class TeacherControlPanel {
   // WebSocket
   // =========================================================================
   getWebSocketUrl() {
-    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const host     = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")
-      ? `${window.location.hostname}:5000` : window.location.host;
-    return `${protocol}//${host}?role=teacher&sessionId=${this.sessionId}`;
+    const loc = window.location;
+    if ((loc.hostname === "localhost" || loc.hostname === "127.0.0.1") && loc.port === "5000") {
+      const protocol = loc.protocol === "https:" ? "wss:" : "ws:";
+      return `${protocol}//${loc.host}?role=teacher&sessionId=${this.sessionId}`;
+    }
+    return `wss://smart-classroom-platform-1j6d.onrender.com?role=teacher&sessionId=${this.sessionId}`;
   }
 
   connectWebSocket() {

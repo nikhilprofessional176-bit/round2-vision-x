@@ -83,9 +83,16 @@ Welcome to **Smart Classroom 2.0**, a next-generation real-time learning platfor
 ### Step 5: Open the Web Applications in your Browser!
 Open Google Chrome, Edge, or Safari and click these links:
 
-- 🎓 **Student App**: 👉 **[http://localhost:5000/index.html](http://localhost:5000/index.html)**
-- 👨‍🏫 **Teacher Panel**: 👉 **[http://localhost:5000/teacher.html](http://localhost:5000/teacher.html)**
-- 📊 **Teacher Analytics**: 👉 **[http://localhost:5000/teacher-analysis.html](http://localhost:5000/teacher-analysis.html)**
+#### 🌐 Live Production Cloud Deployment (Render):
+- 📡 **Live Backend REST API**: 👉 **[https://smart-classroom-platform-1j6d.onrender.com](https://smart-classroom-platform-1j6d.onrender.com)**
+- 🎓 **Student App (Live Cloud)**: 👉 **[https://smart-classroom-platform-1j6d.onrender.com/index.html](https://smart-classroom-platform-1j6d.onrender.com/index.html)**
+- 👨‍🏫 **Teacher Panel (Live Cloud)**: 👉 **[https://smart-classroom-platform-1j6d.onrender.com/teacher.html](https://smart-classroom-platform-1j6d.onrender.com/teacher.html)**
+- 📊 **Teacher Analytics (Live Cloud)**: 👉 **[https://smart-classroom-platform-1j6d.onrender.com/teacher-analysis.html](https://smart-classroom-platform-1j6d.onrender.com/teacher-analysis.html)**
+
+#### 💻 Local Development Links:
+- 🎓 **Student App (Local)**: 👉 **[http://localhost:5000/index.html](http://localhost:5000/index.html)**
+- 👨‍🏫 **Teacher Panel (Local)**: 👉 **[http://localhost:5000/teacher.html](http://localhost:5000/teacher.html)**
+- 📊 **Teacher Analytics (Local)**: 👉 **[http://localhost:5000/teacher-analysis.html](http://localhost:5000/teacher-analysis.html)**
 
 ---
 
