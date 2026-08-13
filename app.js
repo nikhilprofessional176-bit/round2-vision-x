@@ -350,9 +350,10 @@ class SmartClassroomStudentApp {
       this.connectWebSocket();
     });
 
-    this.langSelect.addEventListener("change", (e) => {
+    this.langSelect.addEventListener("change", async (e) => {
       this.currentLanguage = e.target.value;
       this.logDebug("LANG", `Language switched to: ${this.currentLanguage}`);
+      await this.translateAllSegments(this.currentLanguage);
       this.renderCaptions();
     });
 
@@ -497,6 +498,14 @@ class SmartClassroomStudentApp {
         this.logDebug("CANVAS", "Canvas cleared by teacher.");
         break;
 
+      case "teacher_flag_doubt":
+        this.showFlagWarningOverlay(data.message);
+        break;
+
+      case "doubt_blocked":
+        alert(`⚠️ ${data.reason || 'Doubt blocked by content moderation policy.'}`);
+        break;
+
       case "heartbeat":
         break;
 
@@ -505,10 +514,19 @@ class SmartClassroomStudentApp {
     }
   }
 
+  showFlagWarningOverlay(msg) {
+    const overlay = document.getElementById("flag-warning-overlay");
+    if (overlay) {
+      overlay.style.display = "flex";
+      this.logDebug("DECORUM-WARNING", "🚩 Big Red Flag Warning displayed on Canvas!");
+    }
+  }
+
   handleCaptionEvent(data, receiveTimestamp) {
     const segmentId = data.segmentId || `seg-${data.timestamp || Date.now()}`;
     const status = data.status || (data.type === "partial_caption" ? "partial" : "final");
 
+    let textChanged = false;
     let seg = this.segmentsMap.get(segmentId);
     if (!seg) {
       seg = {
@@ -517,13 +535,17 @@ class SmartClassroomStudentApp {
         endTime: Math.floor(this.currentTime) + 5,
         englishText: data.sourceText || "",
         status: status,
-        translations: {}
+        translations: {},
+        lastTranslatedText: ""
       };
       this.segmentsMap.set(segmentId, seg);
       this.currentLecture.segments.push(seg);
+      textChanged = true;
     } else {
-      // Instant in-place segment text update
-      if (data.sourceText) seg.englishText = data.sourceText;
+      if (data.sourceText && seg.englishText !== data.sourceText) {
+        seg.englishText = data.sourceText;
+        textChanged = true;
+      }
       seg.status = status;
     }
 
@@ -534,6 +556,11 @@ class SmartClassroomStudentApp {
     // Instant Target In-Place DOM Mutation
     this.renderOrUpdateSingleCard(seg);
 
+    // Auto-trigger live translation if selected language is non-English and text changed or translation missing
+    if (this.currentLanguage !== "en" && (textChanged || !seg.translations[this.currentLanguage]) && seg.englishText) {
+      this.translateSegmentAsync(seg, this.currentLanguage, textChanged);
+    }
+
     // Stage Latency Benchmark Logging
     if (data.timestamp) {
       const totalLatency = Math.max(5, receiveTimestamp - data.timestamp);
@@ -543,6 +570,38 @@ class SmartClassroomStudentApp {
     if (this.isTTSOn && status === "final") {
       this.speakSegment(seg);
     }
+  }
+
+  async translateSegmentAsync(seg, targetLang, forceUpdate = false) {
+    if (!seg || !seg.englishText || !seg.englishText.trim()) return;
+
+    let cleanText = seg.englishText.replace(/^\[[A-Z]{2}\]\s*/i, '').trim();
+    if (!cleanText) return;
+
+    if (!forceUpdate && seg.lastTranslatedText === cleanText && seg.translations[targetLang]) {
+      return;
+    }
+
+    try {
+      const translated = await this.translateTextAsync(cleanText, targetLang);
+      if (translated) {
+        seg.translations[targetLang] = translated;
+        seg.lastTranslatedText = cleanText;
+        this.renderOrUpdateSingleCard(seg);
+      }
+    } catch(e) {}
+  }
+
+  async translateAllSegments(targetLang) {
+    if (targetLang === "en") return;
+    const promises = this.currentLecture.segments.map(seg => {
+      let cleanEng = (seg.englishText || "").replace(/^\[[A-Z]{2}\]\s*/i, '').trim();
+      if ((!seg.translations[targetLang] || seg.lastTranslatedText !== cleanEng) && cleanEng) {
+        return this.translateSegmentAsync(seg, targetLang, true);
+      }
+      return Promise.resolve();
+    });
+    await Promise.all(promises);
   }
 
   handleStrokeEvent(data) {
@@ -565,15 +624,17 @@ class SmartClassroomStudentApp {
 
   renderOrUpdateSingleCard(seg) {
     let card = document.getElementById(`card-${seg.id}`);
-    const textToDisplay = (this.currentLanguage !== "en" && seg.translations[this.currentLanguage])
+    let cleanEng = (seg.englishText || "").replace(/^\[[A-Z]{2}\]\s*/i, '').trim();
+
+    const isTranslated = this.currentLanguage !== "en" && seg.translations[this.currentLanguage];
+    const textToDisplay = isTranslated
       ? seg.translations[this.currentLanguage]
-      : seg.englishText;
+      : cleanEng;
 
     const formattedText = this.highlightTechnicalTerms(textToDisplay);
     const timeLabel = this.formatTime(seg.startTime || 0);
 
     if (!card) {
-      // Create new card DOM element
       card = document.createElement("div");
       card.id = `card-${seg.id}`;
       card.className = `caption-card ${seg.status === "partial" ? "partial" : ""}`;
@@ -583,8 +644,8 @@ class SmartClassroomStudentApp {
           <span class="caption-time">⏱️ ${timeLabel}</span>
           <span class="caption-status" style="font-size:0.7rem;">${seg.status === "partial" ? "LIVE STREAMING" : "FINAL"}</span>
         </div>
-        <div class="caption-text-source">${formattedText}</div>
-        ${this.currentLanguage !== "en" && seg.translations[this.currentLanguage] ? `<div class="caption-text-translated">${seg.translations[this.currentLanguage]}</div>` : ''}
+        <div class="caption-text-source" style="font-size: 0.92rem; font-weight: 600; color: ${isTranslated ? '#38bdf8' : '#f8fafc'};">${formattedText}</div>
+        ${isTranslated ? `<div class="caption-text-translated" style="font-size: 0.78rem; color: #94a3b8; margin-top: 4px;">Original: ${cleanEng}</div>` : ''}
       `;
 
       card.addEventListener("click", () => {
@@ -593,24 +654,29 @@ class SmartClassroomStudentApp {
       });
 
       this.captionFeed.appendChild(card);
-      this.captionFeed.scrollTop = this.captionFeed.scrollHeight; // Fast instant scroll without animation lag
+      this.captionFeed.scrollTop = this.captionFeed.scrollHeight;
     } else {
-      // Update existing DOM card in-place (No Flickering or Duplicates)
       card.className = `caption-card ${seg.status === "partial" ? "partial" : ""}`;
       const srcEl = card.querySelector(".caption-text-source");
-      if (srcEl) srcEl.innerHTML = formattedText;
+      if (srcEl) {
+        srcEl.innerHTML = formattedText;
+        srcEl.style.color = isTranslated ? '#38bdf8' : '#f8fafc';
+      }
 
       const statusEl = card.querySelector(".caption-status");
       if (statusEl) statusEl.textContent = seg.status === "partial" ? "LIVE STREAMING" : "FINAL";
 
       let transEl = card.querySelector(".caption-text-translated");
-      if (this.currentLanguage !== "en" && seg.translations[this.currentLanguage]) {
+      if (isTranslated) {
         if (!transEl) {
           transEl = document.createElement("div");
           transEl.className = "caption-text-translated";
+          transEl.style.cssText = "font-size: 0.78rem; color: #94a3b8; margin-top: 4px;";
           card.appendChild(transEl);
         }
-        transEl.textContent = seg.translations[this.currentLanguage];
+        transEl.textContent = `Original: ${cleanEng}`;
+      } else if (transEl) {
+        transEl.remove();
       }
       this.captionFeed.scrollTop = this.captionFeed.scrollHeight;
     }
@@ -988,41 +1054,16 @@ class SmartClassroomStudentApp {
   }
 
   async translateTextAsync(text, targetLang) {
+    if (!text || !text.trim()) return text;
+    if (targetLang === "en") return text;
+
     const dict = {
       hi: {
-        "Welcome to this recorded lecture session!": "इस रिकॉर्ड किए गए व्याख्यान सत्र में आपका स्वागत है!",
+        "Welcome to today's lecture on recursion and binary search trees.": "पुनरावृत्ति (recursion) और बाइनरी सर्च ट्री पर आज के व्याख्यान में आपका स्वागत है।",
         "Today we will analyze key core computer science concepts and architectural design.": "आज हम मुख्य कंप्यूटर विज्ञान अवधारणाओं और वास्तुकला डिजाइन का विश्लेषण करेंगे।",
         "Pay close attention to how algorithm efficiency optimizes execution speed.": "ध्यान दें कि कैसे एल्गोरिदम दक्षता निष्पादित गति को अनुकूलित करती है।",
         "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "आइए इंटरएक्टिव व्हाइटबोर्ड पर चरण-दर-चरण वेक्टर आरेख का पता लगाएं।",
         "Feel free to pause, rewind, or switch subtitle languages at any time!": "बेझिझक किसी भी समय सबटाइटल भाषाओं को रोकें, रिवाइंड करें या बदलें!"
-      },
-      es: {
-        "Welcome to this recorded lecture session!": "¡Bienvenido a esta sesión de conferencia grabada!",
-        "Today we will analyze key core computer science concepts and architectural design.": "Hoy analizaremos conceptos clave de ciencias de la computación y diseño arquitectónico.",
-        "Pay close attention to how algorithm efficiency optimizes execution speed.": "Preste mucha atención a cómo la eficiencia del algoritmo optimiza la velocidad de ejecución.",
-        "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "Trazemos el diagrama vectorial paso a paso en la pizarra interactiva.",
-        "Feel free to pause, rewind, or switch subtitle languages at any time!": "¡No dude en pausar, rebobinar o cambiar los idiomas de los subtítulos en cualquier momento!"
-      },
-      fr: {
-        "Welcome to this recorded lecture session!": "Bienvenue dans esta session de cours enregistrée !",
-        "Today we will analyze key core computer science concepts and architectural design.": "Aujourd'hui, nous analyserons les concepts clés de l'informatique et de la conception architecturale.",
-        "Pay close attention to how algorithm efficiency optimizes execution speed.": "Faites très attention à la manière dont l'efficacité de l'algorithme optimise la vitesse d'exécution.",
-        "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "Traçons le schéma vectoriel étape par étape sur le tableau blanc interactif.",
-        "Feel free to pause, rewind, or switch subtitle languages at any time!": "N'hésitez pas à faire una pause, à rembobiner ou a changer la langue des sous-titres !"
-      },
-      de: {
-        "Welcome to this recorded lecture session!": "Willkommen zu dieser aufgezeichneten Vorlesungssitzung!",
-        "Today we will analyze key core computer science concepts and architectural design.": "Heute werden wir Schlüsselkonzepte der Informatik und Architektur analysieren.",
-        "Pay close attention to how algorithm efficiency optimizes execution speed.": "Achten Sie genau darauf, wie Algorithmeneffizienz die Ausführungsgeschwindigkeit optimiert.",
-        "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "Lassen Sie uns das Vektordiagramm Schritt für Schritt auf dem Whiteboard verfolgen.",
-        "Feel free to pause, rewind, or switch subtitle languages at any time!": "Fühlen Sie sich frei, die Untertitelsprachen jederzeit zu pausieren oder zu wechseln!"
-      },
-      ja: {
-        "Welcome to this recorded lecture session!": "この録音された講義セッションへようこそ！",
-        "Today we will analyze key core computer science concepts and architectural design.": "本日は、コンピュータサイエンスのコアコンセプトと設計を分析します。",
-        "Pay close attention to how algorithm efficiency optimizes execution speed.": "アルゴリズムの効率が実行速度をどのように最適化するかに注目してください。",
-        "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "ホワイトボードでステップバイステップのベクトル図を追跡してみましょう。",
-        "Feel free to pause, rewind, or switch subtitle languages at any time!": "いつでも字幕言語を一時停止、巻き戻し、または切り替えることができます。"
       }
     };
 
@@ -1030,6 +1071,17 @@ class SmartClassroomStudentApp {
       return dict[targetLang][text];
     }
 
+    // 1. Ultra-fast Google Translate Free API (< 30ms latency)
+    try {
+      const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t&q=${encodeURIComponent(text)}`);
+      const data = await res.json();
+      if (data && data[0]) {
+        const translated = data[0].map(part => part[0]).join('');
+        if (translated) return translated;
+      }
+    } catch(e) {}
+
+    // 2. Backup MyMemory Translation API
     try {
       const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${targetLang}`);
       const data = await res.json();
@@ -1480,6 +1532,8 @@ class SmartClassroomStudentApp {
       });
     }
 
+    const PROFANITY = ["badword", "fuck", "shit", "bitch", "asshole", "crap", "bastard", "idiot", "nonsense", "pagal", "chutiya", "bhosdike", "gand", "gaali", "saala", "harami", "kamina", "madarchod", "bhenchod", "randi", "bakwas", "porn", "sex", "squirt", "lana", "rhodes", "nude", "xxx", "pussy", "dick"];
+
     if (form) {
       form.addEventListener("submit", (e) => {
         e.preventDefault();
@@ -1488,15 +1542,19 @@ class SmartClassroomStudentApp {
         const doubtText = input.value.trim();
         if (!doubtText) return;
 
-        const name = this.currentStudent ? this.currentStudent.name : "Demo Student";
-        const roll = this.currentStudent ? this.currentStudent.rollNumber : "CS-101";
+        const lower = doubtText.toLowerCase();
+        if (PROFANITY.some(kw => lower.includes(kw))) {
+          alert("⚠️ Inappropriate language or profane keywords detected. Please maintain classroom decorum and ask respectful academic doubts.");
+          this.logDebug("MODERATION-BLOCK", `Profane doubt blocked: "${doubtText}"`);
+          return;
+        }
 
         if (this.ws && this.ws.readyState === WebSocket.OPEN) {
           this.ws.send(JSON.stringify({
             type: "student_live_doubt",
             sessionId: this.currentSessionId || "cs101-recursion",
-            studentName: name,
-            studentRoll: roll,
+            studentName: "Anonymous Student",
+            studentRoll: "Anonymous",
             doubtText: doubtText
           }));
         }

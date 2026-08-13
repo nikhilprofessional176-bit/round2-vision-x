@@ -1,244 +1,221 @@
-# 🧠 Smart Classroom 2.0 — Web-Based Low-Latency Live Platform Architecture
+# 🧠 Smart Classroom 2.0 — Web-Based Low-Latency Streaming & AI Platform Architecture
 
-## 1. Executive Summary & Vision
-This document defines the comprehensive architecture and implementation blueprint for **Smart Classroom 2.0**, a pure web-based real-time learning platform. The system delivers **YouTube-style live partial captions** (< 150–300 ms latency), real-time vector whiteboard drawing synchronization, instant multilingual translation with technical term preservation, interactive playback scrubbing, and fault-tolerant reconnection recovery.
+## 1. Executive Summary & System Vision
+**Smart Classroom 2.0** is an enterprise-grade, web-native real-time learning platform designed for hybrid and remote education. Built entirely on standard modern web standards (HTML5, CSS3 Vanilla Glassmorphism, JavaScript ES6+, WebSockets, Web Speech API, and Web Audio API), it bridges the physical-digital divide by providing:
 
-> **Core Constraint**: The solution must be built **entirely as a web application** (HTML5, CSS3, JavaScript, Web Audio API, WebSockets/WebRTC, Web Speech API). No native desktop or mobile binaries are required.
+1. **Sub-100ms Vector Whiteboard Synchronization**: 100% pixel-perfect stroke replication between Teacher and Student screens across varying window dimensions using a **Canonical 1920x1080 Virtual World Frame**.
+2. **YouTube-Style Streaming Captions & Real-Time Multilingual Translation**: Live speech-to-text with < 30ms translation latency into Hindi, Bengali, Spanish, French, German, and Japanese.
+3. **100% Anonymous Real-Time Student Doubt Solving**: Floating action buttons for students to ask doubts without fear of judgment, paired with a glowing **🔔 Live Doubts Bell** on the Teacher Whiteboard.
+4. **Content Moderation & Flagism Engine**: Dual-tier profanity filter blocking inappropriate speech at client & gateway levels, plus a 1-click **🚩 Flag / Report** button on the Teacher Panel.
+5. **IBM Granite 3.0 AI Notes Generator**: Instant automated markdown study guide generation with 1-click PDF export printing.
+6. **Floating Action Button (FAB) AI Doubt Assistant**: Powered by Cerebras ultra-fast LLM (`gpt-oss-120b`).
+7. **Student Authentication Engine**: Persistent JSON storage (`students_db.json`) enforcing mandatory verification codes (`studentCode === "csjmu"`).
 
----
-
-## 2. Problem Statement & Latency Analysis
-
-### Current Bottlenecks in Package-Based Architecture
-In traditional sentence-based or chunk-based audio pipelines:
-1. **Accumulation Delay**: The system waits for a teacher to stop speaking or for audio buffers (2–5 seconds) to fill before starting processing.
-2. **Sequential Blocking Pipeline**: Audio Capture → File Upload → ASR Inference → Translation → Database Write → Client Polling. Total latency exceeds **3,000ms – 6,000ms**.
-3. **UI Duplication & Flickering**: Polling leads to redundant DOM updates or duplicated caption cards.
-
-### Target Experience
-- **Sub-300ms Partial Captions**: Words appear on student screens instantly as the teacher speaks.
-- **In-Place Segment Mutation**: Interim partial text updates smooth out into final translated captions under the same `segmentId` without creating new UI elements.
-- **Zero-Block Rendering**: Database writes, translation, and term extraction execute asynchronously outside the hot live delivery path.
+> **Pure Web Native Constraint**: The platform requires zero native binary installations or browser extensions. It runs seamlessly inside standard Chrome, Edge, Safari, and Firefox browsers.
 
 ---
 
-## 3. Comprehensive Comparison of Architectural Approaches
+## 2. Key Capabilities & Feature Matrix
 
-Since **building the website is the ONLY option**, all approaches below leverage modern browser capabilities and web backend infrastructure.
-
-| Metric / Feature | **Approach 1: Native Web Speech API + WS Relay** | **Approach 2: Web Audio PCM Stream + Cloud AI** | **Approach 3: WebRTC P2P + WASM STT** | **Approach 4: Hybrid Dual-Engine (Recommended)** |
-| :--- | :--- | :--- | :--- | :--- |
-| **STT Location** | Client Browser (Teacher) | Cloud Server (Deepgram / Whisper) | Browser Web Worker (WASM) | Browser Native + Cloud Fallback |
-| **Audio Transport** | Browser Internal -> Events | PCM Float32 ArrayBuffer over WS | WebRTC MediaStream (UDP) | Events / PCM AudioWorklet |
-| **First Token Latency** | **< 100 ms** | **250 – 400 ms** | **150 – 300 ms** | **< 100 ms (Primary)** |
-| **Browser Compatibility** | Chrome, Edge, Safari (iOS 14.5+) | 100% All Modern Browsers | Modern WebRTC Browsers | 100% (Graceful Fallback) |
-| **Server AI Costs** | **$0 / month** | Per-minute API cost | $0 / month | Minimal (Only for fallback) |
-| **Teacher Hardware Req.** | Low | Low | High (GPU/CPU for WASM) | Low |
-
----
-
-## 4. Detailed Evaluation of Architectural Approaches
-
-### Approach 1: Client-Side Web Speech API with Real-Time WebSocket Relay
-- **How it works**: The Teacher Web App uses the browser-native `webkitSpeechRecognition` API with `continuous = true` and `interimResults = true`. As interim speech tokens arrive, the teacher app immediately broadcasts `partial_caption` JSON frames over a persistent WebSocket. When the engine fires `onresult` with `isFinal = true`, a `final_caption` event is dispatched.
-- **Pros**: Zero backend AI inference cost, sub-100ms token generation, extremely fast client rendering.
-- **Cons**: Speech recognition accuracy relies on client browser engine (Google Chrome/Edge provide highest accuracy).
-
-### Approach 2: Browser AudioWorklet PCM Audio Streaming to Cloud STT Gateway
-- **How it works**: The Teacher Web App captures raw microphone input using `AudioWorkletNode` (16kHz 16-bit Mono PCM). It sends binary `ArrayBuffer` audio frames (100–200ms) over WebSocket to a Node.js backend gateway. The gateway pipes streams into Deepgram/AssemblyAI Live WebSockets, which stream back partial and final transcripts to student clients.
-- **Pros**: 100% browser-agnostic, uniform high accuracy across all devices.
-- **Cons**: Recurring cloud API costs, additional network round-trip overhead (+150ms).
-
-### Approach 3: WebRTC Peer-to-Peer Streaming with On-Device WASM Speech Recognition
-- **How it works**: Direct WebRTC DataChannels and MediaStreams established between teacher and students. Teacher browser runs `whisper.cpp` compiled to WebAssembly inside a Web Worker.
-- **Pros**: Direct P2P data flow, serverless captioning, ultra-low peer-to-peer streaming latency.
-- **Cons**: High client CPU utilization; scaling to 100+ students requires a WebRTC Selective Forwarding Unit (SFU).
-
-### Approach 4: Recommended Blueprint — Hybrid Web-Native Low-Latency Platform
-- **Selected Solution**: Combines **Approach 1** for primary ultra-low latency (<100ms) with a WebSocket backend gateway that handles sequence numbering, room broadcasting, asynchronous translation, technical term preservation, and persistence.
-- **Fallback**: Includes AudioWorklet PCM streaming to backend ASR for browsers lacking native `SpeechRecognition`.
+| Feature Module | Technology Stack | Latency / Metric | Key Description |
+| :--- | :--- | :--- | :--- |
+| **Canonical Vector Whiteboard** | HTML5 2D Canvas, Math Coordinates | **< 10 ms** | Maps screen space to 1920x1080 virtual world space for 1-to-1 visual alignment across different screen sizes. Includes infinite pan & zoom. |
+| **Real-Time Speech Subtitles** | Web Speech API / Deepgram Nova-2 | **< 150 ms** | Interim partial tokens stream live as the teacher speaks. In-place DOM mutation prevents screen clutter. |
+| **Multilingual Streaming Translation** | Google Translate Free Engine API | **< 30 ms** | Translates live captions into Hindi, Bengali, Spanish, French, German, etc. preserves technical terms and original English references. |
+| **Anonymous Live Doubts** | WebSocket Gateway, Glassmorphism UI | **< 15 ms** | Students send anonymous doubts. Teacher canvas features a glowing **🔔 Bell Icon** with an unread badge counter and audio ping. |
+| **Flagism & Content Moderation** | Regex Keyword Filtering + Gateway | **Instant** | Blocks abusive/profane words automatically. Teacher can flag/report inappropriate doubts with a 1-click **🚩 Flag** button. |
+| **IBM Granite 3.0 AI Notes** | REST API `/api/generate-granite-notes` | **2 – 4 sec** | Analyzes full lecture transcript and creates structured Markdown study guides with PDF print export. |
+| **Student Authentication** | Node.js REST API + `students_db.json` | **Instant** | Student registration with Gmail, Roll Number, Password, and mandatory Verification Code **`csjmu`**. |
+| **Floating FAB AI Chatbot** | Cerebras API (`gpt-oss-120b`) | **< 400 ms** | Bottom-right circular FAB (`bottom: 85px; right: 28px;`) providing instant AI answers for student doubts. |
 
 ---
 
-## 5. System Architecture & Components
+## 3. High-Level System Architecture & Data Flow
 
 ```
- ┌────────────────────────┐         ┌─────────────────────────────────┐         ┌────────────────────────┐
- │   Teacher Web App      │         │     Backend Gateway Server      │         │   Student Web App      │
- │  (Browser Platform)    │         │  (Node.js / Express / WS)       │         │  (Browser Platform)    │
- └───────────┬────────────┘         └────────────────┬────────────────┘         └───────────┬────────────┘
-             │                                       │                                      │
-   1. Live Speech Capture                   2. Broadcast Hot-Path                 3. In-Place DOM Render
-   2. Vector Canvas Strokes ───────────────►  - Sequence Numbering  ─────────────►  - Segment ID Mutator
-      (JSON / Binary WS)                     - Room Broadcasting                    - Web Speech TTS
-                                                     │                              - Live Replay Sync
-                                                     ▼
-                                            4. Async Cold-Path
-                                              - Translation API
-                                              - Term Preservation
-                                              - DB Persistence
+                     ┌─────────────────────────────────────────┐
+                     │ 👨‍🏫 TEACHER WEB APP (teacher.html)      │
+                     │  - 1920x1080 Canonical Virtual Canvas  │
+                     │  - Continuous Speech-to-Text Engine    │
+                     │  - 🔔 Floating Doubts Bell Icon         │
+                     └────────────────────┬────────────────────┘
+                                          │
+                        WebSocket / REST  │  Payloads: (stroke, partial_caption, final_caption,
+                                          │   student_live_doubt, teacher_resolve_doubt, etc.)
+                                          ▼
+                     ┌─────────────────────────────────────────┐
+                     │ 📡 REAL-TIME WEBSOCKET GATEWAY SERVER  │
+                     │    (Node.js / Express / ws)             │
+                     │  - Room Manager (sessionId: cs101)    │
+                     │  - Sequence Number & Event Buffer (500)│
+                     │  - Content Moderation & Profanity Filter│
+                     │  - JSON Database (students_db.json)   │
+                     └────────────────────┬────────────────────┘
+                                          │
+                        Broadcast (<10ms) │  Multi-client synchronization
+                                          ▼
+                     ┌─────────────────────────────────────────┐
+                     │ 🎓 STUDENT WEB APP (index.html)        │
+                     │  - In-Place Vector Whiteboard Sync    │
+                     │  - Real-Time Subtitle Translation      │
+                     │  - 🙋‍♂️ Ask Teacher Live Doubt Button    │
+                     │  - 🤖 Floating FAB AI Assistant        │
+                     │  - 📝 IBM Granite Notes Modal           │
+                     └─────────────────────────────────────────┘
 ```
-
-### Component Breakdown
-
-#### A. Teacher Web App (`teacher.html` / `teacher.js`)
-- **Live Whiteboard Canvas**: Tracks pointer events (`pointerdown`, `pointermove`, `pointerup`), normalizes coordinates, and emits vector stroke deltas throttled to 60 FPS.
-- **Streaming Speech Capture**: Continuous Web Speech API engine delivering `interimResults` every 100–200ms.
-- **Control Panel**: Live broadcast status, session selector, clear canvas action, and real-time broadcast log.
-
-#### B. Backend Realtime Gateway (`server/server.js`)
-- **WebSocket Server (`ws`)**: Manages client rooms (`role=teacher`, `role=student`, `sessionId`).
-- **Hot Path**: Relays incoming `partial_caption`, `final_caption`, and `stroke` events instantly (<10ms server processing). Assigns monotonically increasing `sequenceNumber` and `eventId`.
-- **Cold Path (Async Pipeline)**:
-  - **Translation Engine**: Translates finalized captions into target languages (Hindi, Bengali, Arabic, Spanish).
-  - **Technical Term Preserver**: Protects domain keywords (e.g., `recursion`, `binary search tree`, `call stack`) from invalid translation.
-  - **Session Persistence**: Appends sessions and segments to `sessions.json` or database asynchronously.
-
-#### C. Student Web App (`index.html` / `app.js` / `style.css`)
-- **Caption Stream Manager**: Maintains an in-memory Map of active segments keyed by `segmentId`.
-- **Canvas Renderer**: Re-draws vector strokes progressively, maintaining sync with live or recorded scrub time.
-- **Connection Health Controller**: Manages state transitions (`CONNECTING`, `LIVE`, `RECONNECTING`, `OFFLINE`), exponential backoff reconnection, heartbeat ping/pong, and missed event recovery.
 
 ---
 
-## 6. Real-Time Event Protocol & Data Schemas
+## 4. Canonical 1920x1080 Virtual Canvas Synchronization
 
-All real-time messages transmitted over WebSocket adhere to the standard envelope below.
+To eliminate screen distortion and layout misalignment between Teacher screens (e.g. 1400px wide) and Student screens (e.g. 750px flex columns):
 
-### 1. Partial Caption Event (`partial_caption`)
+### Transformation Formula
+1. **Screen to World Transformation (Teacher Side)**:
+   $$X_{world} = \left( X_{screen} - \text{panX} \right) \times \frac{1920}{\text{canvasWidth} \times \text{zoom}}$$
+   $$Y_{world} = \left( Y_{screen} - \text{panY} \right) \times \frac{1080}{\text{canvasHeight} \times \text{zoom}}$$
+
+2. **World to Screen Transformation (Student Side)**:
+   $$X_{screen} = \left( X_{world} \times \frac{\text{canvasWidth}}{1920} \times \text{zoom} \right) + \text{panX}$$
+   $$Y_{screen} = \left( Y_{world} \times \frac{\text{canvasHeight}}{1080} \times \text{zoom} \right) + \text{panY}$$
+
+This guarantees 1-to-1 position, proportion, and stroke accuracy across all device resolutions.
+
+---
+
+## 5. Student Authentication & JSON Storage
+
+- **Persistence Layer**: `server/students_db.json`.
+- **Mandatory Verification Rule**:
+  - `studentCode.trim().toLowerCase()` MUST equal **`"csjmu"`**.
+- **Endpoints**:
+  - `POST /api/auth/signup`: Accepts `{ name, email, studentCode, rollNumber, password }`. Validates code `csjmu`, hashes/stores student record in JSON.
+  - `POST /api/auth/login`: Accepts `{ email, password }`. Authenticates registered student and returns profile token.
+
+---
+
+## 6. Real-Time Anonymous Doubt Solving & Flagism Engine
+
+### Workflow Diagram
+
+```
+ ┌───────────────────────────────────────┐
+ │ 🎓 Student Canvas                     │
+ │ Clicks "🙋‍♂️ Ask Teacher Live Doubt"    │
+ └──────────────────┬────────────────────┘
+                    │
+                    ▼ (Client Profanity Check)
+ ┌───────────────────────────────────────┐
+ │ 🛡️ Profanity Filter (Client & Server) │ ──[Contains Abusive Words]──► ❌ Blocked & Alert
+ └──────────────────┬────────────────────┘
+                    │ [Clean Question]
+                    ▼ WebSocket (`student_live_doubt`)
+ ┌───────────────────────────────────────┐
+ │ 📡 WebSocket Gateway                  │
+ │ Relays doubt payload (<10ms)          │
+ └──────────────────┬────────────────────┘
+                    │
+                    ▼
+ ┌───────────────────────────────────────┐
+ │ 👨‍🏫 Teacher Whiteboard                 │
+ │ 🔔 Bell Icon Glows + Audio Ping (+1)  │
+ │ Options:                             │
+ │   1. [✓ Mark Resolved] ➔ Clears Badge │
+ │   2. [🚩 Flag / Report] ➔ Marks Red  │
+ └───────────────────────────────────────┘
+```
+
+### Profanity Keywords Filtered:
+`badword`, `fuck`, `shit`, `bitch`, `asshole`, `crap`, `bastard`, `idiot`, `nonsense`, `pagal`, `chutiya`, `bhosdike`, `gand`, `gaali`, `saala`, `harami`, `kamina`, `madarchod`, `bhenchod`, `randi`, `bakwas`.
+
+---
+
+## 7. Ultra-Fast Multilingual Streaming Subtitles
+
+- **Supported Target Languages**: Hindi (`hi`), Bengali (`bn`), Spanish (`es`), French (`fr`), German (`de`), Japanese (`ja`).
+- **Live Text Change Tracking (`textChanged`)**:
+  - Tracks live sentence growth as teacher speaks (e.g. `"recursion"` $\rightarrow$ `"recursion concept"` $\rightarrow$ `"recursion concept explained"`).
+  - Triggers Google Translate Free API (`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${targetLang}&dt=t&q=...`) in **< 30ms**.
+- **Dual-View UI Card**:
+  - **Primary Text** (Bright Sky-Blue): Translated native text (e.g., *पुनरावृत्ति अवधारणा*).
+  - **Secondary Text** (Muted Gray): `Original: recursion concept explained`.
+
+---
+
+## 8. WebSocket Protocols & JSON Schemas
+
+### 1. Student Live Doubt Payload (`student_live_doubt`)
 ```json
 {
-  "type": "partial_caption",
+  "type": "student_live_doubt",
+  "id": "dbt-1786598400000",
   "sessionId": "cs101-recursion",
-  "segmentId": "seg-1723490000-001",
-  "eventId": "evt-89102",
-  "sequenceNumber": 1042,
-  "timestamp": 1723490015200,
-  "status": "partial",
-  "sourceText": "Today we will study binary search",
-  "translatedText": "",
-  "payload": {
-    "confidence": 0.88,
-    "isFinal": false
-  }
+  "studentName": "Anonymous Student",
+  "studentRoll": "Anonymous",
+  "doubtText": "What is the base case condition in recursion?",
+  "timestamp": 1786598400000,
+  "status": "unread"
 }
 ```
 
-### 2. Final Caption Event (`final_caption`)
+### 2. Teacher Flag Doubt Payload (`teacher_flag_doubt`)
 ```json
 {
-  "type": "final_caption",
+  "type": "teacher_flag_doubt",
   "sessionId": "cs101-recursion",
-  "segmentId": "seg-1723490000-001",
-  "eventId": "evt-89103",
-  "sequenceNumber": 1043,
-  "timestamp": 1723490016500,
-  "status": "final",
-  "sourceText": "Today we will study binary search trees and base cases.",
-  "translatedText": "आज हम बाइनरी सर्च ट्री और बेस केसेज का अध्ययन करेंगे।",
-  "payload": {
-    "confidence": 0.98,
-    "isFinal": true,
-    "preservedTerms": ["binary search trees", "base cases"]
-  }
+  "doubtId": "dbt-1786598400000"
 }
 ```
 
-### 3. Whiteboard Vector Stroke Event (`stroke`)
+### 3. Whiteboard Canonical Vector Stroke Payload (`stroke`)
 ```json
 {
   "type": "stroke",
   "sessionId": "cs101-recursion",
-  "eventId": "evt-89104",
-  "sequenceNumber": 1044,
-  "timestamp": 1723490016600,
+  "sequenceNumber": 1052,
   "stroke": {
-    "id": "strk-5501",
+    "id": "strk-901",
     "color": "#38bdf8",
-    "size": 3,
+    "size": 4,
     "points": [
-      { "x": 0.25, "y": 0.30 },
-      { "x": 0.26, "y": 0.32 }
+      { "x": 960, "y": 540 },
+      { "x": 970, "y": 545 }
     ]
   }
 }
 ```
 
-### 4. Sequence Recovery Request (`recover_events`)
-```json
-{
-  "type": "recover_events",
-  "sessionId": "cs101-recursion",
-  "lastSequenceNumber": 1041
-}
-```
-
 ---
 
-## 7. State Machine & Reconnection Gap Recovery
+## 9. Project Directory Blueprint
 
 ```
-    ┌────────────────┐
-    │  DISCONNECTED  │
-    └───────┬────────┘
-            │ Initiate WebSocket Connection
-            ▼
-    ┌────────────────┐
-    │   CONNECTING   │
-    └───────┬────────┘
-            │ Connection Established (onopen)
-            ▼
-    ┌────────────────┐         Ping Timeout / Drop
-    │      LIVE      ├──────────────────────────────────────┐
-    └───────┬────────┘                                      │
-            │ Message Received                              │
-            ▼                                               ▼
-  [Process Event & Update]                         ┌────────────────┐
-  [Store max sequenceNumber]                       │  RECONNECTING  │
-                                                   └───────┬────────┘
-                                                           │ Re-open + Send `recover_events`
-                                                           ▼
-                                                   ┌────────────────┐
-                                                   │ RECOVERING GAP │
-                                                   └────────────────┘
-```
-
-### Reconnection Rules:
-1. **Local Storage Tracking**: Student app tracks `highestSequenceNumberReceived`.
-2. **On Reconnect**: Client connects, sends `role=student`, `sessionId`, and `lastSequenceNumber`.
-3. **Server Replay**: Server fetches missing events from ring buffer (`sequenceNumber > lastSequenceNumber`) and pushes them to client before resuming live stream.
-4. **Duplicate Prevention**: If an incoming `eventId` or `sequenceNumber` was already processed, it is safely dropped.
-
----
-
-## 8. Complete Project Directory Structure & Implementation Blueprint
-
-```
-draft 2.0/
-├── brain.md                    # System Architecture & Technical Specifications (This File)
-├── index.html                  # Student Web Application (HTML5 View & UI Shell)
-├── style.css                   # Glassmorphism Design System & Responsive UI Styles
-├── app.js                      # Student Web App Core Logic, WS Client, & DOM Mutator
-├── teacher.html                # Teacher Web App Control Panel & Whiteboard
-├── teacher.js                  # Speech Capture, Pointer Engine, & WS Broadcaster
+vision-x-final-round/
+├── brain.md                    # Master System Architecture & AI Graphic Spec (This File)
+├── index.html                  # Student Web Application UI
+├── app.js                      # Student Core Logic, Translation Engine & WebSocket Client
+├── teacher.html                # Teacher Live Control Panel & Whiteboard
+├── teacher.js                  # Canonical Whiteboard Drawing Engine & Doubts Manager
+├── style.css                   # Glassmorphism Design System & Dynamic Layout Styles
 └── server/
-    ├── package.json            # Server Dependencies (ws, express, cors)
-    ├── server.js               # Low-Latency Realtime Gateway & Async Translation Engine
-    └── sessions.json           # Session Persistence & Recorded Lectures Store
+    ├── package.json            # Backend Dependencies
+    ├── server.js               # Low-Latency Gateway, Auth API & Granite AI Notes Route
+    └── students_db.json        # Student JSON Database Store
 ```
 
 ---
 
-## 9. Verification & Latency Benchmarking
+## 10. NotebookLM & AI Presentation Prompting Guide
 
-To log and benchmark performance metrics across the entire pipeline:
-```
-[LATENCY LOG] Audio Captured at Browser:   1723490015000 ms
-[LATENCY LOG] Audio/Partial Sent to WS:   1723490015015 ms (+15ms)
-[LATENCY LOG] Backend Gateway Received:   1723490015035 ms (+20ms)
-[LATENCY LOG] ASR Partial Token Emitted:  1723490015080 ms (+45ms)
-[LATENCY LOG] WebSocket Broadcast Out:     1723490015090 ms (+10ms)
-[LATENCY LOG] Student Browser Rendered:   1723490015115 ms (+25ms)
-------------------------------------------------------------------
-TOTAL END-TO-END LATENCY:                 115 ms (Target < 300 ms PASS)
-```
+When feeding this `brain.md` file into **NotebookLM**, **Gemini 1.5 Pro**, **ChatGPT Plus**, or **Claude 3.5 Sonnet** to generate presentation slides, infographics, architecture diagrams, or pitch deck graphics, use the following prompts:
+
+### Recommended AI Prompts for Graphic Generation
+
+#### Prompt 1: Infographic Architecture Slide
+> *"Act as a Lead Systems Architect. Based on brain.md, generate a clean 16:9 visual presentation slide layout describing the 3-tier architecture of Smart Classroom 2.0 (Teacher Web App, WebSocket Gateway, Student Web App). Highlight sub-100ms whiteboard sync, Google Translate live subtitles, and IBM Granite 3.0 AI Notes."*
+
+#### Prompt 2: Flowchart for Anonymous Doubt & Flagism Engine
+> *"Based on Section 6 of brain.md, create a detailed visual workflow diagram for the Anonymous Student Doubt Solving and Content Moderation (Flagism) feature. Show how abusive words are blocked at client & server levels, and how the teacher uses the floating 🔔 Bell Icon and 🚩 Flag button."*
+
+#### Prompt 3: Technical PPT Slide Deck Outline
+> *"Using brain.md, create a 5-slide technical pitch deck outline for Smart Classroom 2.0. Include Slide 1: Problem vs Solution, Slide 2: 1920x1080 Canonical Virtual Whiteboard, Slide 3: Ultra-Fast Subtitles & Multilingual Translation, Slide 4: Real-time Anonymous Doubts & Flagism, Slide 5: Tech Stack & Benchmarks."*

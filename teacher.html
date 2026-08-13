@@ -229,12 +229,6 @@
       <span>👨‍🏫</span> Teacher Live Control Panel & Whiteboard
     </div>
     <div style="display: flex; align-items: center; gap: 12px;">
-      <!-- Live Student Doubts Bell Notification Button -->
-      <button id="teacher-doubts-btn" style="position: relative; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); color: #f59e0b; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;" title="View Student Live Doubts">
-        <span style="font-size: 1.1rem;">🔔</span> Doubts
-        <span id="doubt-badge" style="background: #f43f5e; color: #fff; border-radius: 50%; width: 20px; height: 20px; font-size: 0.72rem; font-weight: 800; display: none; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(244,63,94,0.6);">0</span>
-      </button>
-
       <div id="recording-indicator" class="recording-badge" style="display: none;">
         <span class="rec-dot"></span> REC LIVE
       </div>
@@ -277,7 +271,15 @@
         </div>
       </div>
 
-      <canvas id="teacher-canvas"></canvas>
+      <div class="canvas-wrapper" style="position: relative; flex: 1; display: flex; width: 100%;">
+        <!-- Sleek Floating Bell Icon for Student Live Doubts on Teacher Canvas -->
+        <button id="teacher-doubts-btn" style="position: absolute; top: 12px; right: 14px; z-index: 20; background: rgba(9, 13, 22, 0.88); backdrop-filter: blur(10px); border: 1px solid rgba(245, 158, 11, 0.6); color: #f59e0b; width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.6), 0 0 20px rgba(245,158,11,0.3); transition: transform 0.2s;" title="View Student Live Doubts">
+          <span style="font-size: 1.25rem;">🔔</span>
+          <span id="doubt-badge" style="position: absolute; top: -4px; right: -4px; background: #f43f5e; color: #fff; border-radius: 50%; min-width: 20px; height: 20px; font-size: 0.72rem; font-weight: 800; display: none; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid #060911; box-shadow: 0 0 10px rgba(244,63,94,0.9);">0</span>
+        </button>
+
+        <canvas id="teacher-canvas"></canvas>
+      </div>
     </div>
 
     <!-- Right Column: Subject Selector & Dual ASR Engine Speech Streaming -->

@@ -857,15 +857,36 @@ if (WebSocketServer) {
           return;
         }
 
+const PROFANITY_KEYWORDS = [
+  "badword", "fuck", "shit", "bitch", "asshole", "crap", "bastard", "idiot", "nonsense",
+  "pagal", "chutiya", "bhosdike", "gand", "gaali", "saala", "harami", "kamina", "madarchod",
+  "bhenchod", "randi", "bakwas", "porn", "sex", "squirt", "lana", "rhodes", "nude", "xxx", "pussy", "dick"
+];
+
+function isProfaneText(text) {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  return PROFANITY_KEYWORDS.some(kw => lower.includes(kw));
+}
+
         // Handle Student Live Doubt Relay to Teacher
         if (data.type === 'student_live_doubt') {
-          console.log(`[STUDENT DOUBT] Room [${sessionId}] from ${data.studentName || 'Student'} (${data.studentRoll}): ${data.doubtText}`);
+          if (isProfaneText(data.doubtText)) {
+            console.log(`[MODERATION BLOCKED] Blocked profane doubt in room [${sessionId}]: "${data.doubtText}"`);
+            ws.send(JSON.stringify({
+              type: 'doubt_blocked',
+              reason: 'Inappropriate language or profane keywords detected. Please maintain classroom decorum.'
+            }));
+            return;
+          }
+
+          console.log(`[STUDENT DOUBT] Room [${sessionId}] Anonymous Student: ${data.doubtText}`);
           const doubtPayload = {
             type: 'student_live_doubt',
             id: `dbt-${Date.now()}`,
             sessionId: sessionId,
-            studentName: data.studentName || "Anonymous Student",
-            studentRoll: data.studentRoll || "CS-101",
+            studentName: "Anonymous Student",
+            studentRoll: "Anonymous",
             doubtText: data.doubtText,
             timestamp: Date.now(),
             status: "unread"
@@ -892,6 +913,25 @@ if (WebSocketServer) {
           });
           state.students.forEach(s => {
             if (s.readyState === 1) s.send(resolveJson);
+          });
+          return;
+        }
+
+        // Handle Teacher Flag / Report Doubt
+        if (data.type === 'teacher_flag_doubt') {
+          console.log(`[TEACHER FLAGGED DOUBT] Doubt [${data.doubtId}] flagged by teacher.`);
+          const flagPayload = {
+            type: 'teacher_flag_doubt',
+            doubtId: data.doubtId,
+            sessionId: sessionId,
+            message: "⚠️ A student doubt was FLAGGED & REPORTED by the Professor for violating Classroom Decorum!"
+          };
+          const flagJson = JSON.stringify(flagPayload);
+          state.teachers.forEach(t => {
+            if (t.readyState === 1) t.send(flagJson);
+          });
+          state.students.forEach(s => {
+            if (s.readyState === 1) s.send(flagJson);
           });
           return;
         }

@@ -91,6 +91,17 @@
         <div class="canvas-overlay-badge" id="canvas-status">🔴 LIVE SYNC</div>
         <button id="ask-teacher-doubt-btn" style="position: absolute; top: 14px; right: 14px; z-index: 10; background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; font-weight: 800; border: none; border-radius: 8px; padding: 6px 12px; font-size: 0.78rem; cursor: pointer; box-shadow: 0 4px 15px rgba(245,158,11,0.4); display: flex; align-items: center; gap: 6px; transition: transform 0.2s;">🙋‍♂️ Ask Teacher Live Doubt</button>
         <canvas id="whiteboard-canvas"></canvas>
+
+        <!-- Big Red Flag Banner Overlay (Middle of Student Canvas) -->
+        <div id="flag-warning-overlay" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(225, 29, 72, 0.35); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); z-index: 99; align-items: center; justify-content: center; flex-direction: column; text-align: center; border-radius: 14px; border: 3px solid #f43f5e; box-shadow: inset 0 0 60px rgba(244, 63, 94, 0.7);">
+          <div style="font-size: 4.5rem; margin-bottom: 8px; filter: drop-shadow(0 0 25px #f43f5e);">🚩</div>
+          <h2 style="color: #ffffff; font-size: 1.6rem; font-weight: 900; letter-spacing: 1px; text-shadow: 0 0 20px #f43f5e, 0 0 30px #e11d48; margin-bottom: 10px; font-family: 'Outfit', sans-serif;">CLASSROOM DECORUM WARNING</h2>
+          <div style="color: #ffe4e6; font-size: 0.92rem; font-weight: 600; max-width: 85%; line-height: 1.5; background: rgba(0, 0, 0, 0.75); padding: 14px 22px; border-radius: 12px; border: 1px solid rgba(244, 63, 94, 0.6); box-shadow: 0 8px 32px rgba(0,0,0,0.5);">
+            ⚠️ A student doubt was <strong>FLAGGED & REPORTED</strong> by the Professor for violating academic standards!
+            <div style="font-size: 0.8rem; color: #fda4af; margin-top: 6px; font-weight: 500;">Please keep questions respectful, academic, and relevant to the lecture.</div>
+          </div>
+          <button onclick="document.getElementById('flag-warning-overlay').style.display='none'" style="margin-top: 18px; padding: 10px 24px; background: linear-gradient(135deg, #f43f5e, #e11d48); color: #ffffff; font-weight: 800; border: none; border-radius: 10px; font-size: 0.88rem; cursor: pointer; box-shadow: 0 4px 20px rgba(244,63,94,0.6); transition: all 0.2s;">Got It / Dismiss Warning</button>
+        </div>
       </div>
     </section>
 
@@ -395,7 +406,7 @@
 
       <form id="ask-teacher-form" style="display: flex; flex-direction: column; gap: 12px;">
         <div style="background: rgba(255,255,255,0.04); border-left: 3px solid #f59e0b; padding: 8px 12px; border-radius: 6px; font-size: 0.78rem; color: #cbd5e1;">
-          Posting as: <strong id="student-doubt-sender-name" style="color: #fff;">Demo Student</strong> <span id="student-doubt-sender-roll" style="color: #94a3b8;">(CS-101)</span>
+          🕵️ <strong style="color: #f59e0b;">100% Anonymous Doubt</strong> <span style="color: #94a3b8;">(Your identity is completely hidden)</span>
         </div>
 
         <div>

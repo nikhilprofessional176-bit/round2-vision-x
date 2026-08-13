@@ -8,6 +8,7 @@
 
 class TeacherControlPanel {
   constructor() {
+    window.teacherApp = this;
     this.sessionId = "cs101-recursion";
     this.ws = null;
     
@@ -644,6 +645,10 @@ class TeacherControlPanel {
           const doubt = this.doubts.find(d => d.id === data.doubtId);
           if (doubt) doubt.status = "resolved";
           this.updateDoubtsUI();
+        } else if (data.type === "teacher_flag_doubt") {
+          const doubt = this.doubts.find(d => d.id === data.doubtId);
+          if (doubt) doubt.status = "flagged";
+          this.updateDoubtsUI();
         }
       } catch(e) {}
     };
@@ -669,7 +674,7 @@ class TeacherControlPanel {
 
   updateDoubtsUI() {
     if (!this.doubtsList) return;
-    const unread = this.doubts.filter(d => d.status !== "resolved");
+    const unread = this.doubts.filter(d => d.status === "unread");
     
     if (this.doubtBadge) {
       if (unread.length > 0) {
@@ -691,28 +696,32 @@ class TeacherControlPanel {
 
     this.doubtsList.innerHTML = this.doubts.map(d => {
       const isResolved = d.status === "resolved";
+      const isFlagged = d.status === "flagged";
       const timeStr = new Date(d.timestamp || Date.now()).toLocaleTimeString();
       return `
-        <div style="background: ${isResolved ? 'rgba(255,255,255,0.02)' : 'rgba(245,158,11,0.08)'}; border: 1px solid ${isResolved ? 'rgba(255,255,255,0.1)' : 'rgba(245,158,11,0.3)'}; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+        <div style="background: ${isFlagged ? 'rgba(244,63,94,0.1)' : (isResolved ? 'rgba(255,255,255,0.02)' : 'rgba(245,158,11,0.08)')}; border: 1px solid ${isFlagged ? 'rgba(244,63,94,0.4)' : (isResolved ? 'rgba(255,255,255,0.1)' : 'rgba(245,158,11,0.3)')}; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 1.1rem;">👤</span>
-              <strong style="color: #fff; font-size: 0.9rem;">${d.studentName || 'Student'}</strong>
-              <span style="color: #94a3b8; font-size: 0.75rem; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px;">${d.studentRoll || 'CS-101'}</span>
+              <span style="font-size: 1.1rem;">${isFlagged ? '🚩' : '🕵️'}</span>
+              <strong style="color: ${isFlagged ? '#f43f5e' : '#f59e0b'}; font-size: 0.9rem;">${isFlagged ? 'Flagged Inappropriate Doubt' : 'Anonymous Student'}</strong>
+              <span style="color: #94a3b8; font-size: 0.72rem; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px;">Private Student Doubt</span>
             </div>
             <span style="font-size: 0.72rem; color: #94a3b8;">${timeStr}</span>
           </div>
 
-          <div style="color: ${isResolved ? '#94a3b8' : '#f8fafc'}; font-size: 0.85rem; line-height: 1.4; word-break: break-word; text-decoration: ${isResolved ? 'line-through' : 'none'};">
+          <div style="color: ${isFlagged ? '#f43f5e' : (isResolved ? '#94a3b8' : '#f8fafc')}; font-size: 0.85rem; line-height: 1.4; word-break: break-word; text-decoration: ${(isResolved || isFlagged) ? 'line-through' : 'none'};">
             💬 "${d.doubtText}"
           </div>
 
-          <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
-            ${isResolved ? `
-              <span style="font-size: 0.75rem; color: #10b981; font-weight: 700;">✓ Resolved</span>
+          <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px; margin-top: 6px;">
+            ${isFlagged ? `
+              <span style="font-size: 0.78rem; color: #f43f5e; font-weight: 800; background: rgba(244,63,94,0.2); border: 1px solid rgba(244,63,94,0.4); padding: 4px 10px; border-radius: 6px;">🚩 Flagged & Reported</span>
+            ` : (isResolved ? `
+              <span style="font-size: 0.78rem; color: #10b981; font-weight: 800; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); padding: 4px 10px; border-radius: 6px;">✓ Resolved</span>
             ` : `
-              <button onclick="window.teacherApp.resolveDoubt('${d.id}')" style="padding: 5px 12px; background: #10b981; color: #000; font-weight: 700; border: none; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">✓ Mark Resolved</button>
-            `}
+              <button onclick="window.teacherApp.resolveDoubt('${d.id}')" style="padding: 6px 14px; background: linear-gradient(135deg, #10b981, #059669); color: #000; font-weight: 800; border: none; border-radius: 8px; font-size: 0.78rem; cursor: pointer; box-shadow: 0 2px 8px rgba(16,185,129,0.3);">✓ Mark Resolved</button>
+              <button onclick="window.teacherApp.flagDoubt('${d.id}')" style="padding: 6px 14px; background: linear-gradient(135deg, #ef4444, #f43f5e); color: #fff; font-weight: 800; border: none; border-radius: 8px; font-size: 0.78rem; cursor: pointer; box-shadow: 0 2px 8px rgba(244,63,94,0.4);" title="Report inappropriate or spam question">🚩 Flag / Report</button>
+            `)}
           </div>
         </div>
       `;
@@ -732,6 +741,22 @@ class TeacherControlPanel {
         doubtId: doubtId
       }));
     }
+  }
+
+  flagDoubt(doubtId) {
+    const doubt = this.doubts.find(d => d.id === doubtId);
+    if (doubt) {
+      doubt.status = "flagged";
+    }
+    this.updateDoubtsUI();
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: "teacher_flag_doubt",
+        sessionId: this.sessionId,
+        doubtId: doubtId
+      }));
+    }
+    this.log(`🚩 DOUBT FLAGGED & REPORTED: Doubt [${doubtId}] marked inappropriate by Teacher.`);
   }
 
   playNotificationBeep() {
