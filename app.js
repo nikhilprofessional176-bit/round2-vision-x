@@ -109,6 +109,11 @@ class SmartClassroomStudentApp {
     this._pdfExtractedText = "";
     this._pdfFileName = "";
     this.setupPDFNotesListeners();
+    this.personalNotes = [];
+    try {
+      this.personalNotes = JSON.parse(localStorage.getItem("personal_notes_" + this.currentSessionId) || "[]");
+    } catch(e) {}
+    setTimeout(() => this.renderPersonalNotesList(), 100);
 
     // Recorded Lectures Modal DOM Cache
     this.recordingsBtn = document.getElementById("recordings-btn");
@@ -341,11 +346,26 @@ class SmartClassroomStudentApp {
     }
 
     if (this.downloadNotesPdfBtn) {
-      this.downloadNotesPdfBtn.addEventListener("click", () => this.printNotesAsPDF());
+      this.downloadNotesPdfBtn.addEventListener("click", () => this.exportPDFNotes());
     }
 
-    if (this.copyNotesBtn) {
-      this.copyNotesBtn.addEventListener("click", () => this.copyNotesMarkdown());
+    const mdBtn = document.getElementById("download-notes-md-btn");
+    if (mdBtn) {
+      mdBtn.addEventListener("click", () => this.exportMarkdownNotes());
+    }
+
+    const srtBtn = document.getElementById("download-notes-srt-btn");
+    if (srtBtn) {
+      srtBtn.addEventListener("click", () => this.exportSRTSubtitles());
+    }
+
+    const vttBtn = document.getElementById("download-notes-vtt-btn");
+    if (vttBtn) {
+      vttBtn.addEventListener("click", () => this.exportWebVTTSubtitles());
+    }
+
+    if (this.exportVttBtn) {
+      this.exportVttBtn.addEventListener("click", () => this.exportWebVTTSubtitles());
     }
 
     if (this.notesModal) {
@@ -395,20 +415,11 @@ class SmartClassroomStudentApp {
   // WebSocket Core Client & Reconnection Engine
   // =========================================================================
   getWebSocketUrl() {
-    const loc = window.location;
-    if ((loc.hostname === "localhost" || loc.hostname === "127.0.0.1") && loc.port === "5000") {
-      const protocol = loc.protocol === "https:" ? "wss:" : "ws:";
-      return `${protocol}//${loc.host}?role=student&sessionId=${this.currentSessionId}`;
-    }
-    return `wss://smart-classroom-platform-1j6d.onrender.com?role=student&sessionId=${this.currentSessionId}`;
-  }
-
-  getApiBaseUrl() {
-    const loc = window.location;
-    if ((loc.hostname === "localhost" || loc.hostname === "127.0.0.1") && loc.port === "5000") {
-      return `${loc.protocol}//${loc.host}`;
-    }
-    return "https://smart-classroom-platform-1j6d.onrender.com";
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const host = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      ? `${window.location.hostname}:5000`
+      : window.location.host;
+    return `${protocol}//${host}?role=student&sessionId=${this.currentSessionId}`;
   }
 
   connectWebSocket() {
@@ -609,8 +620,10 @@ class SmartClassroomStudentApp {
       seg.status = status;
     }
 
-    // ── If server already delivered a translation, store it now ────────
-    if (data.translatedText && needsTranslation) {
+    // ── If server already delivered a translation or pre-translated payload, store it now ────────
+    if (data.translations && data.translations[lang]) {
+      seg.translations[lang] = data.translations[lang];
+    } else if (data.translatedText && needsTranslation) {
       seg.translations[lang] = data.translatedText;
     }
 
@@ -1095,38 +1108,273 @@ class SmartClassroomStudentApp {
   }
 
   // =========================================================================
-  // Export Notes & Subtitles Engine
+  // Live Personal Note-Taking & Bookmark Engine (Feature 1 & Feature 3)
+  // =========================================================================
+  handleAddPersonalNote() {
+    const input = document.getElementById("personal-note-input");
+    if (!input) return;
+    const text = input.value.trim();
+    if (!text) return;
+
+    const timestampSec = Math.floor(this.currentTime || 0);
+    const timestampStr = this.formatTime(timestampSec);
+    const noteObj = {
+      id: Date.now(),
+      timestamp: timestampSec,
+      timestampStr: timestampStr,
+      text: text
+    };
+
+    if (!this.personalNotes) this.personalNotes = [];
+    this.personalNotes.push(noteObj);
+    try {
+      localStorage.setItem("personal_notes_" + this.currentSessionId, JSON.stringify(this.personalNotes));
+    } catch(e) {}
+    input.value = "";
+    this.renderPersonalNotesList();
+    this.logDebug("NOTES", `Personal note added at [${timestampStr}]: "${text}"`);
+  }
+
+  renderPersonalNotesList() {
+    const container = document.getElementById("personal-notes-list");
+    const badge = document.getElementById("note-count-badge");
+    if (!container) return;
+
+    if (!this.personalNotes) this.personalNotes = [];
+
+    if (badge) badge.textContent = `${this.personalNotes.length} Note${this.personalNotes.length !== 1 ? 's' : ''}`;
+
+    if (this.personalNotes.length === 0) {
+      container.innerHTML = `<div style="color: #64748b; font-size: 0.78rem; font-style: italic; text-align: center; padding: 6px;">No personal notes added yet. Type above to bookmark timestamps!</div>`;
+      return;
+    }
+
+    container.innerHTML = this.personalNotes.map(n => `
+      <div style="background: rgba(255,255,255,0.05); border-left: 3px solid #10b981; border-radius: 6px; padding: 6px 10px; display: flex; align-items: center; justify-content: space-between; font-size: 0.8rem; color: #f8fafc;">
+        <div>
+          <span class="note-time-link" data-time="${n.timestamp}" style="color: #38bdf8; font-weight: 700; cursor: pointer; background: rgba(56,189,248,0.15); padding: 1px 6px; border-radius: 4px; font-family: monospace;">⏱️ [${n.timestampStr}]</span>
+          <span style="margin-left: 8px;">${this.escapeHTML(n.text)}</span>
+        </div>
+        <button class="delete-note-btn" data-id="${n.id}" style="background: transparent; border: none; color: #f43f5e; font-size: 0.78rem; cursor: pointer; opacity: 0.8;">✕</button>
+      </div>
+    `).join('');
+
+    container.querySelectorAll(".note-time-link").forEach(el => {
+      el.addEventListener("click", () => {
+        const t = parseFloat(el.getAttribute("data-time"));
+        this.currentTime = t;
+        this.updateView();
+        this.logDebug("SEEK", `Jumped to timestamp [${this.formatTime(t)}] from personal notes`);
+      });
+    });
+
+    container.querySelectorAll(".delete-note-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = parseInt(btn.getAttribute("data-id"));
+        this.personalNotes = this.personalNotes.filter(n => n.id !== id);
+        try {
+          localStorage.setItem("personal_notes_" + this.currentSessionId, JSON.stringify(this.personalNotes));
+        } catch(e) {}
+        this.renderPersonalNotesList();
+      });
+    });
+  }
+
+  escapeHTML(str) {
+    if (!str) return "";
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  captureWhiteboardSnapshot() {
+    if (!this.canvas) return null;
+    try {
+      return this.canvas.toDataURL("image/png");
+    } catch(e) {
+      return null;
+    }
+  }
+
+  // =========================================================================
+  // Multi-Format Export Engine (PDF, Markdown & Subtitles) (Feature 4)
   // =========================================================================
   exportPDFNotes() {
+    const snapshotUrl = this.captureWhiteboardSnapshot();
+    const lang = this.currentLanguage || "en";
+    const targetLangName = this.langSelect ? this.langSelect.options[this.langSelect.selectedIndex].text : "Hindi";
+    
+    // Extract domain technical terms
+    const techTermsSet = new Set();
+    const termsRegex = /(recursion|base case|call stack|stack overflow|binary search|binary search tree|tree|graph|algorithm|time complexity|O\(log N\)|O\(N\)|O\(1\)|function|node|data structure)/gi;
+    
+    this.currentLecture.segments.forEach(s => {
+      const matches = (s.englishText || "").match(termsRegex);
+      if (matches) matches.forEach(m => techTermsSet.add(m.toLowerCase()));
+    });
+    const techTerms = Array.from(techTermsSet);
+
+    const segs = this.currentLecture.segments;
+
     const printWindow = window.open("", "_blank");
     const html = `
+      <!DOCTYPE html>
       <html>
       <head>
-        <title>Lecture Notes — ${this.currentLecture.title}</title>
+        <title>Lecture Notes — ${this.escapeHTML(this.currentLecture.title)}</title>
         <style>
-          body { font-family: sans-serif; padding: 30px; color: #1e293b; }
-          h1 { color: #0284c7; }
-          .seg-box { border-bottom: 1px solid #cbd5e1; padding: 12px 0; }
-          .term { background: #e0e7ff; color: #4338ca; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+          body { font-family: 'Inter', sans-serif; padding: 40px; color: #0f172a; background: #fff; line-height: 1.6; }
+          .header-box { border-bottom: 3px solid #0284c7; padding-bottom: 16px; margin-bottom: 24px; }
+          .header-title { font-size: 24px; font-weight: 800; color: #0284c7; margin: 0 0 6px 0; }
+          .header-meta { font-size: 13px; color: #64748b; display: flex; gap: 16px; flex-wrap: wrap; }
+          .section-title { font-size: 15px; font-weight: 700; color: #0f172a; border-left: 4px solid #38bdf8; padding-left: 10px; margin: 24px 0 12px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+          .terms-grid { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+          .term-chip { background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 700; border: 1px solid #bae6fd; }
+          .snapshot-box { border: 1px solid #cbd5e1; border-radius: 12px; padding: 12px; text-align: center; margin: 16px 0; background: #f8fafc; page-break-inside: avoid; }
+          .snapshot-img { max-width: 100%; max-height: 320px; border-radius: 8px; border: 1px solid #e2e8f0; }
+          .snapshot-caption { font-size: 12px; color: #64748b; font-weight: 600; margin-top: 6px; }
+          .notes-box { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 14px; margin: 16px 0; page-break-inside: avoid; }
+          .note-item { font-size: 13px; color: #166534; margin-bottom: 6px; }
+          .transcript-table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+          .transcript-table th { background: #f1f5f9; text-align: left; padding: 10px; font-size: 12px; font-weight: 700; color: #475569; border-bottom: 2px solid #cbd5e1; }
+          .transcript-table td { padding: 10px; font-size: 13px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+          .time-badge { font-family: monospace; font-weight: 700; color: #0284c7; background: #f0f9ff; padding: 2px 6px; border-radius: 4px; font-size: 11px; white-space: nowrap; }
+          .trans-text { color: #0369a1; font-weight: 600; }
+          @media print {
+            body { padding: 20px; }
+            .no-print { display: none; }
+            .snapshot-box, .notes-box { page-break-inside: avoid; }
+          }
         </style>
       </head>
       <body>
-        <h1>📝 ${this.currentLecture.title}</h1>
-        <p><strong>Instructor:</strong> ${this.currentLecture.instructor || "Prof. A. Sharma"}</p>
-        <hr/>
-        <h2>Lecture Transcript & Key Terms</h2>
-        ${this.currentLecture.segments.map(s => `
-          <div class="seg-box">
-            <p><strong>[${this.formatTime(s.startTime)}]</strong> ${s.englishText}</p>
-            ${s.translations.hi ? `<p style="color: #0369a1;"><em>${s.translations.hi}</em></p>` : ''}
+        <div class="no-print" style="margin-bottom: 20px; text-align: right;">
+          <button onclick="window.print()" style="padding: 10px 20px; background: #0284c7; color: #fff; border: none; border-radius: 8px; font-weight: 700; cursor: pointer;">🖨️ Confirm Print / Save PDF</button>
+        </div>
+
+        <div class="header-box">
+          <h1 class="header-title">🎓 ${this.escapeHTML(this.currentLecture.title)} — Lecture Notes</h1>
+          <div class="header-meta">
+            <span><strong>Instructor:</strong> ${this.escapeHTML(this.currentLecture.instructor || "Prof. A. Sharma")}</span>
+            <span><strong>Subject:</strong> ${this.escapeHTML(this.currentLecture.subject || "Computer Science")}</span>
+            <span><strong>Date:</strong> ${new Date().toLocaleDateString()}</span>
+            <span><strong>Language Target:</strong> ${this.escapeHTML(targetLangName)}</span>
           </div>
-        `).join('')}
+        </div>
+
+        <!-- Section 1: Key Terms Index -->
+        <div class="section-title">📌 Domain Technical Keywords Index</div>
+        <div class="terms-grid">
+          ${techTerms.length > 0 ? techTerms.map(t => `<span class="term-chip">🔑 ${this.escapeHTML(t)}</span>`).join('') : '<span class="term-chip">recursion</span><span class="term-chip">base case</span><span class="term-chip">call stack</span><span class="term-chip">binary search tree</span>'}
+        </div>
+
+        <!-- Section 2: Whiteboard Canvas Snapshot -->
+        ${snapshotUrl ? `
+          <div class="section-title">🖼️ Interactive Whiteboard Canvas Snapshot</div>
+          <div class="snapshot-box">
+            <img src="${snapshotUrl}" class="snapshot-img" alt="Whiteboard Snapshot"/>
+            <div class="snapshot-caption">Snapshot captured from Smart Classroom 2.0 Live Vector Whiteboard Canvas</div>
+          </div>
+        ` : ''}
+
+        <!-- Section 3: Student Personal Notes & Bookmarks -->
+        ${this.personalNotes && this.personalNotes.length > 0 ? `
+          <div class="section-title">📝 My Personal Notes & Bookmarks</div>
+          <div class="notes-box">
+            ${this.personalNotes.map(n => `
+              <div class="note-item">
+                <span class="time-badge">[${n.timestampStr}]</span> <strong>${this.escapeHTML(n.text)}</strong>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        <!-- Section 4: Dual-Column Lecture Transcript -->
+        <div class="section-title">📖 Structured Dual-Language Lecture Transcript</div>
+        <table class="transcript-table">
+          <thead>
+            <tr>
+              <th style="width: 80px;">Time</th>
+              <th>Original Speech (English)</th>
+              <th>Target Translation (${this.escapeHTML(targetLangName)})</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${segs.map(s => `
+              <tr>
+                <td><span class="time-badge">[${this.formatTime(s.startTime)}]</span></td>
+                <td>${this.escapeHTML(s.englishText || '')}</td>
+                <td class="trans-text">${this.escapeHTML(s.translations[lang] || s.englishText || '')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
       </body>
       </html>
     `;
     printWindow.document.write(html);
     printWindow.document.close();
-    printWindow.print();
+    this.logDebug("EXPORT", "Opened Rich PDF Print Layout");
+  }
+
+  exportMarkdownNotes() {
+    const lang = this.currentLanguage || "en";
+    const segs = this.currentLecture.segments;
+    
+    let md = `# 🎓 ${this.currentLecture.title} — Lecture Notes & Study Guide\n`;
+    md += `**Instructor:** ${this.currentLecture.instructor || "Prof. A. Sharma"} | **Subject:** ${this.currentLecture.subject || "Computer Science"}\n`;
+    md += `**Date:** ${new Date().toLocaleDateString()} | **Platform:** Smart Classroom 2.0\n\n`;
+    md += `---\n\n`;
+
+    // Personal Notes
+    if (this.personalNotes && this.personalNotes.length > 0) {
+      md += `## 📝 My Personal Notes & Bookmarks\n\n`;
+      this.personalNotes.forEach(n => {
+        md += `- **[${n.timestampStr}]** ${n.text}\n`;
+      });
+      md += `\n---\n\n`;
+    }
+
+    // Dual-Language Transcript Table
+    md += `## 📖 Lecture Transcript & Multilingual Subtitles\n\n`;
+    md += `| Timestamp | Original Speech (English) | Target Translation |\n`;
+    md += `| :--- | :--- | :--- |\n`;
+    segs.forEach(s => {
+      const timeStr = this.formatTime(s.startTime);
+      const eng = (s.englishText || "").replace(/\|/g, "\\|");
+      const trans = (s.translations[lang] || s.englishText || "").replace(/\|/g, "\\|");
+      md += `| \`${timeStr}\` | ${eng} | ${trans} |\n`;
+    });
+
+    md += `\n---\n*Exported automatically from Smart Classroom 2.0 Multi-Format Export Engine*\n`;
+
+    const blob = new Blob([md], { type: "text/markdown;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${this.currentLecture.id}-study-notes.md`;
+    a.click();
+    this.logDebug("EXPORT", "Downloaded Markdown (.md) Notes");
+  }
+
+  exportSRTSubtitles() {
+    let srt = "";
+    this.currentLecture.segments.forEach((s, i) => {
+      const start = this.formatSRTTime(s.startTime);
+      const end = this.formatSRTTime(s.endTime || s.startTime + 5);
+      const text = (this.currentLanguage !== "en" && s.translations[this.currentLanguage])
+        ? s.translations[this.currentLanguage]
+        : s.englishText;
+      
+      srt += `${i + 1}\n${start} --> ${end}\n${text}\n\n`;
+    });
+
+    const blob = new Blob([srt], { type: "text/plain;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${this.currentLecture.id}-subtitles.srt`;
+    a.click();
+    this.logDebug("EXPORT", "Downloaded SRT Subtitles (.srt)");
   }
 
   exportWebVTTSubtitles() {
@@ -1134,7 +1382,11 @@ class SmartClassroomStudentApp {
     this.currentLecture.segments.forEach((s, i) => {
       const start = this.formatVTTTime(s.startTime);
       const end = this.formatVTTTime(s.endTime || s.startTime + 5);
-      vtt += `${i + 1}\n${start} --> ${end}\n${s.englishText}\n\n`;
+      const text = (this.currentLanguage !== "en" && s.translations[this.currentLanguage])
+        ? s.translations[this.currentLanguage]
+        : s.englishText;
+
+      vtt += `${i + 1}\n${start} --> ${end}\n${text}\n\n`;
     });
 
     const blob = new Blob([vtt], { type: "text/vtt" });
@@ -1143,6 +1395,15 @@ class SmartClassroomStudentApp {
     a.href = url;
     a.download = `${this.currentLecture.id}-subtitles.vtt`;
     a.click();
+    this.logDebug("EXPORT", "Downloaded WebVTT Subtitles (.vtt)");
+  }
+
+  formatSRTTime(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const mins = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+    const ms = Math.floor((seconds % 1) * 1000);
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')},${ms.toString().padStart(3, '0')}`;
   }
 
   formatTime(seconds) {
@@ -1170,7 +1431,7 @@ class SmartClassroomStudentApp {
     this.logDebug("LIBRARY", "Opening Recorded Lectures Library...");
 
     try {
-      const response = await fetch(`${this.getApiBaseUrl()}/api/subjects`);
+      const response = await fetch('/api/subjects');
       const data = await response.json();
       this.cachedSubjects = (data.success && data.subjects) ? data.subjects : [];
       this.populateSubjectFilter(this.cachedSubjects);
@@ -1381,6 +1642,30 @@ class SmartClassroomStudentApp {
     if (!text || !text.trim()) return text;
     if (targetLang === "en") return text;
 
+    const FAST_LEXICON = {
+      hi: {
+        "hello": "नमस्ते", "welcome": "स्वागत है", "today": "आज",
+        "recursion": "रिकर्शन (पुनरावृत्ति)", "binary search": "बाइनरी सर्च",
+        "tree": "ट्री", "graph": "ग्राफ", "algorithm": "एल्गोरिदम",
+        "stack": "स्टैक", "queue": "कतार", "code": "कोड", "lecture": "व्याख्यान"
+      },
+      bn: {
+        "hello": "হ্যালো", "welcome": "স্বাগতম", "today": "আজ",
+        "recursion": "রিকার্সন (পুনরাবৃত্তি)", "binary search": "বাইনারি সার্চ",
+        "tree": "ট্রি", "graph": "গ্রাফ", "algorithm": "অ্যালগরিদম",
+        "stack": "স্ট্যাক", "queue": "কিউ", "code": "কোড", "lecture": "লেকচার"
+      },
+      es: {
+        "hello": "hola", "welcome": "bienvenido", "today": "hoy",
+        "recursion": "recursión", "binary search": "búsqueda binaria"
+      }
+    };
+
+    const cleanLower = text.trim().toLowerCase();
+    if (FAST_LEXICON[targetLang] && FAST_LEXICON[targetLang][cleanLower]) {
+      return FAST_LEXICON[targetLang][cleanLower];
+    }
+
     const dict = {
       hi: {
         "Welcome to today's lecture on recursion and binary search trees.": "पुनरावृत्ति (recursion) और बाइनरी सर्च ट्री पर आज के व्याख्यान में आपका स्वागत है।",
@@ -1589,7 +1874,7 @@ class SmartClassroomStudentApp {
     `;
 
     try {
-      const res = await fetch(`${this.getApiBaseUrl()}/api/generate-granite-notes`, {
+      const res = await fetch('/api/generate-granite-notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1771,7 +2056,7 @@ class SmartClassroomStudentApp {
       </div>`;
 
     try {
-      const res = await fetch(`${this.getApiBaseUrl()}/api/generate-pdf-notes`, {
+      const res = await fetch('/api/generate-pdf-notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1940,7 +2225,7 @@ class SmartClassroomStudentApp {
         const password = document.getElementById("login-password").value;
 
         try {
-          const res = await fetch(`${this.getApiBaseUrl()}/api/auth/login`, {
+          const res = await fetch('/api/auth/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email, password })
@@ -1977,7 +2262,7 @@ class SmartClassroomStudentApp {
         }
 
         try {
-          const res = await fetch(`${this.getApiBaseUrl()}/api/auth/signup`, {
+          const res = await fetch('/api/auth/signup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name, email, studentCode, rollNumber, password })

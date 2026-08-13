@@ -236,10 +236,10 @@ function renderTimeline(doubts) {
 // If opened directly from disk (file://) or another port, point explicitly to port 5000.
 const API_BASE = (() => {
   const loc = window.location;
-  if ((loc.hostname === "localhost" || loc.hostname === "127.0.0.1") && loc.port === "5000") {
-    return "";
-  }
-  return "https://smart-classroom-platform-1j6d.onrender.com";
+  if (loc.protocol === "file:") return "http://localhost:5000";
+  // Served from same host but different port (e.g. VS Code Live Server on 5500)
+  if (loc.port && loc.port !== "5000") return `${loc.protocol}//${loc.hostname}:5000`;
+  return "";  // same origin — relative paths work fine
 })();
 
 class DoubtsAnalysisDashboard {

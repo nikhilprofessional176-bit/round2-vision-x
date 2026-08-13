@@ -44,6 +44,46 @@
             "text": "Feel free to pause, rewind, or switch subtitle languages at any time!"
           }
         ]
+      },
+      {
+        "id": "rec-1786609231304",
+        "title": "Lecture Video 2 (Aug 13, 2026, 01:50 PM)",
+        "videoUrl": "/recordings/Lecture_cs101-recursion_1786609230900.webm",
+        "uploadMethod": "Local Server Storage",
+        "recordedAt": "2026-08-13T08:20:31.304Z",
+        "formattedDate": "Aug 13, 2026, 01:50 PM",
+        "captions": [
+          {
+            "id": "c1",
+            "startTime": 0,
+            "endTime": 4,
+            "text": "Welcome to this recorded lecture session!"
+          },
+          {
+            "id": "c2",
+            "startTime": 4,
+            "endTime": 10,
+            "text": "Today we will analyze key core computer science concepts and architectural design."
+          },
+          {
+            "id": "c3",
+            "startTime": 10,
+            "endTime": 18,
+            "text": "Pay close attention to how algorithm efficiency optimizes execution speed."
+          },
+          {
+            "id": "c4",
+            "startTime": 18,
+            "endTime": 26,
+            "text": "Let us trace the step-by-step vector diagram on the interactive whiteboard."
+          },
+          {
+            "id": "c5",
+            "startTime": 26,
+            "endTime": 40,
+            "text": "Feel free to pause, rewind, or switch subtitle languages at any time!"
+          }
+        ]
       }
     ]
   },

@@ -1072,16 +1072,65 @@ if (WebSocketServer) {
       try {
         const data = JSON.parse(rawStr);
 
+const SERVER_TRANSLATION_CACHE = new Map();
+
+async function getOrFetchServerTranslation(text) {
+  if (!text || !text.trim()) return {};
+  const clean = text.replace(/^\[[A-Z]{2}\]\s*/i, "").trim().toLowerCase();
+  if (!clean) return {};
+
+  if (SERVER_TRANSLATION_CACHE.has(clean)) {
+    return SERVER_TRANSLATION_CACHE.get(clean);
+  }
+
+  const translations = {};
+  const langs = ['hi', 'bn', 'es', 'fr', 'de'];
+
+  try {
+    await Promise.all(langs.map(async (lang) => {
+      try {
+        const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=${lang}&dt=t&q=${encodeURIComponent(clean)}`;
+        const res = await fetch(url);
+        const resJson = await res.json();
+        if (resJson && resJson[0] && resJson[0][0] && resJson[0][0][0]) {
+          translations[lang] = resJson[0].map(p => p[0]).join('');
+        }
+      } catch(e) {}
+    }));
+    if (Object.keys(translations).length > 0) {
+      SERVER_TRANSLATION_CACHE.set(clean, translations);
+    }
+  } catch(e) {}
+
+  return translations;
+}
+
         // ── HOT PATH fast-exit for partial_caption ─────────────────────────
-        // Partial tokens must NOT wait for seq-number assignment, buffer push,
-        // or any other bookkeeping. Relay them directly to students in < 1ms.
         if (data.type === 'partial_caption') {
           data.sessionId = sessionId;
+          const cleanText = (data.sourceText || "").replace(/^\[[A-Z]{2}\]\s*/i, "").trim().toLowerCase();
+          if (cleanText && SERVER_TRANSLATION_CACHE.has(cleanText)) {
+            data.translations = SERVER_TRANSLATION_CACHE.get(cleanText);
+          }
           const partialJson = JSON.stringify(data);
           state.students.forEach(student => {
             if (student.readyState === 1) student.send(partialJson);
           });
-          return; // skip ALL bookkeeping below — ephemeral, not worth buffering
+
+          // Fire background translation cache warming for sentence fragments
+          if (cleanText && !SERVER_TRANSLATION_CACHE.has(cleanText)) {
+            getOrFetchServerTranslation(data.sourceText).then(trans => {
+              if (trans && Object.keys(trans).length > 0) {
+                const updateMsg = JSON.stringify({
+                  type: 'translation_update',
+                  segmentId: data.segmentId || `seg-${data.timestamp || Date.now()}`,
+                  translations: trans
+                });
+                state.students.forEach(s => { if (s.readyState === 1) s.send(updateMsg); });
+              }
+            }).catch(()=>{});
+          }
+          return;
         }
 
         // Assign Sequence Number and Event ID
