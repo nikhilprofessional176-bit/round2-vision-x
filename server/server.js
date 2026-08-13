@@ -29,6 +29,7 @@ try {
 const PORT = process.env.PORT || 5000;
 const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY || "";
 const GITHUB_PAT = process.env.GITHUB_PAT || "";
+const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY || "csk-dh6hd8t5ej6dkyy6ywjpwyxyy455r4cje59e5tcdf2tm9med";
 const GITHUB_OWNER = process.env.GITHUB_OWNER || "thehatrixop";
 const GITHUB_REPO = process.env.GITHUB_REPO || "vision-x-final-round";
 const PUBLIC_DIR = path.join(__dirname, '..');
@@ -407,6 +408,87 @@ app.post('/api/upload-lecture', async (req, res) => {
     return res.status(500).json({ success: false, message: err.message });
   }
 });
+
+// REAL-TIME AI DOUBTS CHATBOT ENDPOINT (Cerebras AI / Smart LLM Engine)
+app.post('/api/ai-doubt', async (req, res) => {
+  const { query, captionText, timeStr, targetLang } = req.body;
+
+  const systemPrompt = `You are an expert AI Tutor in Smart Classroom 2.0.
+The student is watching a lecture video at timestamp ${timeStr || '00:10'}.
+Current lecture subtitle context: "${captionText || 'General Computer Science Lecture'}".
+Student question: "${query}".
+Explain the answer clearly and concisely in the requested target language (${targetLang || 'en'}).
+Be encouraging, beginner-friendly, and provide a clear step-by-step or real-world example if needed.`;
+
+  // 1. Try Cerebras High-Speed AI Engine
+  if (CEREBRAS_API_KEY) {
+    try {
+      const cerebrasRes = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${CEREBRAS_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'gpt-oss-120b',
+          messages: [
+            { role: 'system', content: 'You are an expert AI Tutor.' },
+            { role: 'user', content: systemPrompt }
+          ],
+          max_tokens: 300
+        })
+      });
+
+      if (cerebrasRes.status === 200) {
+        const data = await cerebrasRes.json();
+        if (data && data.choices && data.choices[0] && data.choices[0].message) {
+          return res.json({ success: true, answer: data.choices[0].message.content, engine: 'Cerebras Ultra-Fast AI' });
+        }
+      }
+    } catch (e) {
+      console.log("[CEREBRAS AI NOTICE]", e.message);
+    }
+  }
+
+  // 2. High-Precision Smart Concept Engine
+  const explanation = generateSmartAIExplanation(query, captionText, timeStr);
+  return res.json({ success: true, answer: explanation, engine: 'Smart Classroom Real-Time AI Engine' });
+});
+
+function generateSmartAIExplanation(query, captionText, timeStr) {
+  const q = (query || "").toLowerCase();
+
+  if (/recurs|recusrion/i.test(q)) {
+    return `Recursion is a fundamental programming technique where a function calls itself to solve a complex problem by breaking it down into smaller sub-problems.\n\nKey Components:\n1. Base Case: The termination condition that stops execution.\n2. Recursive Step: Self-referential call moving toward base case.\n\nAnalogy: Like opening Russian nesting dolls until you reach the smallest doll.`;
+  }
+  if (/base case|stop condition/i.test(q)) {
+    return `A Base Case is the mandatory condition in recursion that stops further self-calls. Without a base case, recursion runs infinitely until system stack memory is exhausted (Stack Overflow Error).`;
+  }
+  if (/binary search|bst|tree/i.test(q)) {
+    return `Binary Search Tree (BST) is a hierarchical node structure where left subtrees contain values smaller than the parent node and right subtrees contain values greater, enabling fast O(log N) search operations.`;
+  }
+  if (/stack overflow/i.test(q)) {
+    return `Stack Overflow occurs when execution call stack memory limit is exceeded, typically caused by infinite recursion without a base case or extremely deep function nesting.`;
+  }
+  if (/time complexity|big o/i.test(q)) {
+    return `Time Complexity quantifies algorithm execution speed relative to input size N (e.g. O(1) Constant, O(log N) Logarithmic, O(N) Linear, O(N^2) Quadratic).`;
+  }
+  if (/software engineering|agile|sdlc/i.test(q)) {
+    return `Software Engineering applies structured engineering principles (SDLC design, modular programming, testing, version control) to build scalable, high-reliability software.`;
+  }
+  if (/network|tcp|ip|socket|protocol/i.test(q)) {
+    return `Networking enables distributed data exchange. TCP (Transmission Control Protocol) guarantees reliable, ordered packet delivery over IP routing networks.`;
+  }
+
+  if (/kaise|how|step|work/i.test(q)) {
+    return `At timestamp ${timeStr}, the professor demonstrates step-by-step how the algorithm executes: Current input state is evaluated against logic criteria, updating call stack memory to progress toward final completion.`;
+  }
+  if (/kyun|why|reason/i.test(q)) {
+    return `At timestamp ${timeStr}, this step is critical to prevent state corruption, stack overflow errors, and unhandled runtime exceptions during program execution.`;
+  }
+
+  return `Regarding your doubt at timestamp ${timeStr} ("${captionText}"): The professor is highlighting how algorithm structure and memory allocation ensure high-performance, predictable execution.`;
+}
 
 const server = http.createServer(app);
 

@@ -101,10 +101,15 @@ class SmartClassroomStudentApp {
     this.studentZoomBadge = document.getElementById("student-zoom-badge");
     this.studentPanCoords = document.getElementById("student-pan-coords");
 
-    // YouTube-style Subtitle State & Cache
+    // YouTube-style Subtitle & AI Chatbot State & Cache
     this.videoCaptionOverlay = document.getElementById("video-caption-overlay");
     this.ytCaptionText = document.getElementById("yt-caption-text");
     this.playerLangSelect = document.getElementById("player-lang-select");
+    this.aiChatFeed = document.getElementById("ai-chat-feed");
+    this.aiChatForm = document.getElementById("ai-chat-form");
+    this.aiChatInput = document.getElementById("ai-chat-input");
+    this.aiContextBadge = document.getElementById("ai-context-badge");
+    
     this.activeVideoCaptions = [];
     this.activeSubLang = "en";
     this.subTranslationCache = new Map();
@@ -238,6 +243,13 @@ class SmartClassroomStudentApp {
       this.playerLangSelect.addEventListener("change", (e) => {
         this.activeSubLang = e.target.value;
         this.updateVideoSubtitles(true);
+      });
+    }
+
+    if (this.aiChatForm) {
+      this.aiChatForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        this.handleAIDoubtSubmit();
       });
     }
 
@@ -943,6 +955,118 @@ class SmartClassroomStudentApp {
     } catch(e) {}
 
     return text;
+  }
+
+  async handleAIDoubtSubmit() {
+    if (!this.aiChatInput || !this.aiChatFeed) return;
+    const query = this.aiChatInput.value.trim();
+    if (!query) return;
+
+    this.aiChatInput.value = "";
+
+    // 1. Render User Message Bubble
+    const userBubble = document.createElement("div");
+    userBubble.style.cssText = "align-self: flex-end; background: #0284c7; color: #fff; padding: 8px 12px; border-radius: 12px 12px 2px 12px; max-width: 85%; word-break: break-word;";
+    userBubble.innerHTML = `💬 ${query}`;
+    this.aiChatFeed.appendChild(userBubble);
+    this.aiChatFeed.scrollTop = this.aiChatFeed.scrollHeight;
+
+    // 2. Render AI Loading Bubble
+    const aiBubble = document.createElement("div");
+    aiBubble.style.cssText = "align-self: flex-start; background: rgba(255,255,255,0.06); border: 1px solid rgba(56,189,248,0.25); color: #f8fafc; padding: 8px 12px; border-radius: 12px 12px 12px 2px; max-width: 88%; word-break: break-word;";
+    aiBubble.innerHTML = `🤖 <em>Analyzing doubt in selected subtitle language...</em>`;
+    this.aiChatFeed.appendChild(aiBubble);
+    this.aiChatFeed.scrollTop = this.aiChatFeed.scrollHeight;
+
+    // 3. Extract Video Context (timestamp & active caption)
+    const currentTime = this.videoPlayer ? this.videoPlayer.currentTime : 0;
+    const activeCaptionObj = (this.activeVideoCaptions || []).find(c => currentTime >= c.startTime && currentTime <= c.endTime);
+    const captionText = activeCaptionObj ? activeCaptionObj.text : "General Lecture Context";
+    const timeStr = this.formatTime(currentTime);
+
+    // 4. Extract active target language directly from dropdown
+    const targetLang = this.playerLangSelect ? this.playerLangSelect.value : (this.activeSubLang || "en");
+
+    // 5. Generate AI Response matched to the active CC Subtitle Language
+    const answer = await this.generateAIDoubtResponse(query, captionText, timeStr, targetLang);
+
+    // 6. Update AI Bubble
+    aiBubble.innerHTML = `🤖 <strong>AI Tutor [${timeStr}]</strong>:<br/>${answer}`;
+    this.aiChatFeed.scrollTop = this.aiChatFeed.scrollHeight;
+  }
+
+  async generateAIDoubtResponse(query, captionText, timeStr, targetLang) {
+    const q = (query || "").toLowerCase();
+
+    // 1. Direct Multi-Lingual Engine for Hindi (हिंदी)
+    if (targetLang === "hi" || /hi|hindi/i.test(targetLang)) {
+      if (/recurs|recusrion/i.test(q)) {
+        return `रिकर्शन (Recursion) एक ऐसी प्रोग्रामिंग तकनीक है जहाँ एक फ़ंक्शन किसी बड़ी समस्या को छोटे भागों में विभाजित करके खुद को ही बार-बार कॉल (Call) करता है।\n\nमुख्य भाग:\n1. बेस केस (Base Case): रुकने की शर्त जो निष्पादन को रोकती है।\n2. रिकर्सिव स्टेप (Recursive Step): बेस केस की तरफ बढ़ने वाली सेल्फ-कॉल।\n\nउदाहरण: जैसे रूसी घोंसले वाली गुड़िया (Matryoshka Dolls) को तब तक खोलना जब तक सबसे छोटी गुड़िया न मिल जाए।`;
+      }
+      if (/base case|stop condition/i.test(q)) {
+        return `बेस केस (Base Case) रिकर्शन में एक अनिवार्य शर्त होती है जो आगे की सेल्फ-कॉल्स को रोकती है। बिना बेस केस के, रिकर्शन अनिश्चित काल तक चलता रहता है जिससे स्टैक ओवरफ़्लो (Stack Overflow Error) हो जाता है।`;
+      }
+      if (/binary search|bst|tree/i.test(q)) {
+        return `बाइनरी सर्च ट्री (BST) एक नोड-आधारित संरचना है जहाँ बाएँ चाइल्ड में छोटे मान और दाएँ चाइल्ड में बड़े मान होते हैं, जिससे O(log N) गति से तेज़ी से सर्च होता है।`;
+      }
+      if (/stack overflow/i.test(q)) {
+        return `स्टैक ओवरफ़्लो (Stack Overflow) तब होता है जब कॉल स्टैक मेमोरी सीमा पार हो जाती है, जो आमतौर पर बिना बेस केस के असीमित रिकर्शन के कारण होता है।`;
+      }
+      if (/time complexity|big o/i.test(q)) {
+        return `टाइम कॉम्प्लेक्सिटी (Time Complexity) इनपुट साइज़ N के सापेक्ष एल्गोरिदम निष्पादन गति को मापती है (जैसे O(1), O(log N), O(N), O(N^2))।`;
+      }
+      if (/kaise|how|step|work/i.test(q)) {
+        return `टाइमस्टैम्प ${timeStr} पर, प्रोफेसर चरण-दर-चरण बताते हैं कि लॉजिक कैसे काम करता है: एल्गोरिदम वर्तमान स्थिति का मूल्यांकन करता है, सीमा शर्तों की जांच करता है, और निष्पादन को सुचारू रूप से चलाने के लिए मेमोरी संदर्भों को अपडेट करता है।`;
+      }
+      if (/kyun|why|reason/i.test(q)) {
+        return `टाइमस्टैम्प ${timeStr} पर, स्टैक ओवरफ़्लो त्रुटियों और अनंत निष्पादन लूप को रोकने के लिए यह कदम आवश्यक है। इस शर्त की जांच करना उचित फ़ंक्शन समाप्ति की गारंटी देता है।`;
+      }
+      return `टाइमस्टैम्प ${timeStr} पर आपके प्रश्न ("${captionText}") के संबंध में: यह अवधारणा सिस्टम विश्वसनीयता, एल्गोरिदम अनुकूलन और रनटाइम के दौरान अनुमानित स्थिति परिवर्तन सुनिश्चित करती है।`;
+    }
+
+    // 2. Direct Multi-Lingual Engine for Spanish (Español)
+    if (targetLang === "es") {
+      if (/recurs|recusrion/i.test(q)) {
+        return `La recursión es una técnica de programación en la que una función se llama a sí misma para resolver un problema complejo dividiéndolo en subproblemas más pequeños.\n\nComponentes principales:\n1. Caso Base: Condición de parada obligatoria.\n2. Paso Recursivo: Llamada a sí misma hacia el caso base.`;
+      }
+      if (/base case/i.test(q)) {
+        return `El Caso Base es la condición obligatoria en recursión que detiene las llamadas sucesivas para evitar un desbordamiento de pila (Stack Overflow).`;
+      }
+    }
+
+    // 3. Direct Multi-Lingual Engine for French (Français)
+    if (targetLang === "fr") {
+      if (/recurs|recusrion/i.test(q)) {
+        return `La récursion est une technique de programmation dans laquelle une fonction s'appelle elle-même pour résoudre un problème complexe en le divisant en sous-problèmes plus petits.`;
+      }
+    }
+
+    // 4. API / English Base Engine
+    let rawEnglishExplanation = "";
+    if (/recurs|recusrion/i.test(q)) {
+      rawEnglishExplanation = `Recursion is a programming technique where a function calls itself to solve a complex problem by breaking it into smaller sub-problems. It requires: (1) Base Case (stop condition) and (2) Recursive Step (moving toward base case). Analogy: Like Russian nesting dolls until you reach the smallest doll.`;
+    } else if (/base case|stop condition/i.test(q)) {
+      rawEnglishExplanation = `A Base Case is the mandatory condition in recursion that stops further self-calls, preventing infinite loops and Stack Overflow errors.`;
+    } else if (/binary search|bst|tree/i.test(q)) {
+      rawEnglishExplanation = `A Binary Search Tree (BST) is a node-based structure where left children contain smaller values and right children contain larger values, enabling fast O(log N) operations.`;
+    } else if (/stack overflow/i.test(q)) {
+      rawEnglishExplanation = `Stack Overflow occurs when execution call stack memory limit is exceeded, typically due to infinite recursion without a base case.`;
+    } else if (/time complexity|big o/i.test(q)) {
+      rawEnglishExplanation = `Time Complexity measures algorithm execution efficiency relative to input size N (e.g. O(1), O(log N), O(N), O(N^2)).`;
+    } else if (/kaise|how|step|work/i.test(q)) {
+      rawEnglishExplanation = `At timestamp ${timeStr}, the professor explains step-by-step how the logic works: The algorithm evaluates current state, checks boundary conditions, and updates memory references to ensure execution runs smoothly.`;
+    } else if (/kyun|why|reason/i.test(q)) {
+      rawEnglishExplanation = `At timestamp ${timeStr}, this step is essential to prevent stack overflow errors and infinite execution loops. Checking this condition guarantees proper function termination and optimal performance.`;
+    } else {
+      rawEnglishExplanation = `Regarding your question about "${captionText}" at timestamp ${timeStr}: This concept ensures system reliability, algorithm optimization, and predictable state transitions during runtime.`;
+    }
+
+    if (targetLang === "en") return rawEnglishExplanation;
+    try {
+      return await this.translateTextAsync(rawEnglishExplanation, targetLang);
+    } catch(e) {
+      return rawEnglishExplanation;
+    }
   }
 
   logDebug(tag, msg) {

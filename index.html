@@ -125,12 +125,12 @@
         <button id="close-modal-btn" class="modal-close">&times;</button>
       </div>
       
-      <!-- Video Player Container with YouTube Subtitles Overlay -->
+      <!-- Video Player & AI Doubts Chatbot Container -->
       <div id="player-container" style="margin-bottom: 20px; display: none;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
           <div style="font-size: 0.9rem; font-weight: 600; color: #38bdf8;" id="playing-title">Playing Video</div>
           <div style="display: flex; align-items: center; gap: 8px;">
-            <label style="font-size: 0.78rem; color: #94a3b8;">💬 CC Subtitle Lang:</label>
+            <label style="font-size: 0.78rem; color: #94a3b8;">💬 CC Subtitle & AI Chat Lang:</label>
             <select id="player-lang-select" style="padding: 4px 8px; background: #090d16; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; font-size: 0.78rem;">
               <option value="en" selected>🇬🇧 English</option>
               <option value="hi">🇮🇳 Hindi (हिंदी)</option>
@@ -145,12 +145,38 @@
           </div>
         </div>
 
-        <div style="position: relative; border-radius: 12px; overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.15);">
-          <video id="lecture-video-player" controls style="width: 100%; max-height: 380px; display: block; background: #000; outline: none;"></video>
-          
-          <!-- YouTube-style Floating Subtitle Overlay -->
-          <div id="video-caption-overlay" class="yt-caption-overlay" style="display: none;">
-            <span id="yt-caption-text">Subtitles will appear here...</span>
+        <div style="display: flex; gap: 16px; align-items: stretch; flex-wrap: wrap;">
+          <!-- Left: Video Player -->
+          <div style="flex: 1.8; min-width: 320px; position: relative; border-radius: 12px; overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.15);">
+            <video id="lecture-video-player" controls style="width: 100%; max-height: 380px; display: block; background: #000; outline: none;"></video>
+            
+            <!-- YouTube-style Floating Subtitle Overlay -->
+            <div id="video-caption-overlay" class="yt-caption-overlay" style="display: none;">
+              <span id="yt-caption-text">Subtitles will appear here...</span>
+            </div>
+          </div>
+
+          <!-- Right: Conversational AI Doubts Assistant Chatbot -->
+          <div id="ai-tutor-panel" class="ai-tutor-sidebar" style="flex: 1; min-width: 280px; max-height: 380px; background: rgba(9, 13, 22, 0.95); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.5);">
+            <div style="padding: 10px 14px; background: rgba(56, 189, 248, 0.08); border-bottom: 1px solid rgba(255,255,255,0.1); display: flex; justify-content: space-between; align-items: center;">
+              <div style="font-size: 0.82rem; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 6px;">
+                🤖 AI Concept Doubts Chatbot
+              </div>
+              <span id="ai-context-badge" style="font-size: 0.7rem; background: rgba(56, 189, 248, 0.2); color: #38bdf8; padding: 2px 6px; border-radius: 4px;">Live Video Context</span>
+            </div>
+
+            <!-- Chat Messages Container -->
+            <div id="ai-chat-feed" style="flex: 1; padding: 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; font-size: 0.8rem; scroll-behavior: smooth;">
+              <div class="ai-msg-box" style="background: rgba(255,255,255,0.04); border-left: 3px solid #38bdf8; padding: 8px 12px; border-radius: 6px; color: #e2e8f0;">
+                👋 <strong>Ask any doubt!</strong> Type questions like <em>"Ye step kaise hua?"</em> or <em>"Iska kya matlab hai?"</em> and I will explain in your selected subtitle language!
+              </div>
+            </div>
+
+            <!-- Chat Input Bar -->
+            <form id="ai-chat-form" style="padding: 8px 10px; background: rgba(0,0,0,0.4); border-top: 1px solid rgba(255,255,255,0.1); display: flex; gap: 6px;">
+              <input type="text" id="ai-chat-input" placeholder="Ask doubt e.g. Ye step kaise hua..." style="flex: 1; padding: 7px 10px; background: #090d16; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; font-size: 0.78rem; outline: none;" required />
+              <button type="submit" id="ai-send-btn" style="padding: 7px 12px; background: #38bdf8; color: #000; border: none; border-radius: 6px; font-weight: 700; font-size: 0.78rem; cursor: pointer;">Send</button>
+            </form>
           </div>
         </div>
       </div>
