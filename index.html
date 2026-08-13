@@ -125,10 +125,34 @@
         <button id="close-modal-btn" class="modal-close">&times;</button>
       </div>
       
-      <!-- Video Player Container -->
+      <!-- Video Player Container with YouTube Subtitles Overlay -->
       <div id="player-container" style="margin-bottom: 20px; display: none;">
-        <div style="font-size: 0.9rem; font-weight: 600; color: #38bdf8; margin-bottom: 8px;" id="playing-title">Playing Video</div>
-        <video id="lecture-video-player" controls style="width: 100%; max-height: 380px; border-radius: 12px; background: #000; outline: none; border: 1px solid rgba(255,255,255,0.15);"></video>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <div style="font-size: 0.9rem; font-weight: 600; color: #38bdf8;" id="playing-title">Playing Video</div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <label style="font-size: 0.78rem; color: #94a3b8;">💬 CC Subtitle Lang:</label>
+            <select id="player-lang-select" style="padding: 4px 8px; background: #090d16; border: 1px solid rgba(255,255,255,0.2); border-radius: 6px; color: #fff; font-size: 0.78rem;">
+              <option value="en" selected>🇬🇧 English</option>
+              <option value="hi">🇮🇳 Hindi (हिंदी)</option>
+              <option value="es">🇪🇸 Spanish (Español)</option>
+              <option value="fr">🇫🇷 French (Français)</option>
+              <option value="de">🇩🇪 German (Deutsch)</option>
+              <option value="ja">🇯🇵 Japanese (日本語)</option>
+              <option value="mr">🇮🇳 Marathi (मराठी)</option>
+              <option value="bn">🇮🇳 Bengali (বাংলা)</option>
+              <option value="ta">🇮🇳 Tamil (தமிழ்)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="position: relative; border-radius: 12px; overflow: hidden; background: #000; border: 1px solid rgba(255,255,255,0.15);">
+          <video id="lecture-video-player" controls style="width: 100%; max-height: 380px; display: block; background: #000; outline: none;"></video>
+          
+          <!-- YouTube-style Floating Subtitle Overlay -->
+          <div id="video-caption-overlay" class="yt-caption-overlay" style="display: none;">
+            <span id="yt-caption-text">Subtitles will appear here...</span>
+          </div>
+        </div>
       </div>
 
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">

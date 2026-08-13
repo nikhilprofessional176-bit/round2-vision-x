@@ -101,6 +101,15 @@ class SmartClassroomStudentApp {
     this.studentZoomBadge = document.getElementById("student-zoom-badge");
     this.studentPanCoords = document.getElementById("student-pan-coords");
 
+    // YouTube-style Subtitle State & Cache
+    this.videoCaptionOverlay = document.getElementById("video-caption-overlay");
+    this.ytCaptionText = document.getElementById("yt-caption-text");
+    this.playerLangSelect = document.getElementById("player-lang-select");
+    this.activeVideoCaptions = [];
+    this.activeSubLang = "en";
+    this.subTranslationCache = new Map();
+    this.currentActiveSegId = null;
+
     this.initCanvasSize();
     this.bindEvents();
     this.loadLectureSession(this.currentLecture);
@@ -215,9 +224,23 @@ class SmartClassroomStudentApp {
     if (this.recordingsBtn) {
       this.recordingsBtn.addEventListener("click", () => this.openRecordingsModal());
     }
+
     if (this.closeModalBtn) {
       this.closeModalBtn.addEventListener("click", () => this.closeRecordingsModal());
     }
+
+    // Video Player Subtitles & CC Listener
+    if (this.videoPlayer) {
+      this.videoPlayer.addEventListener("timeupdate", () => this.updateVideoSubtitles());
+    }
+
+    if (this.playerLangSelect) {
+      this.playerLangSelect.addEventListener("change", (e) => {
+        this.activeSubLang = e.target.value;
+        this.updateVideoSubtitles(true);
+      });
+    }
+
     if (this.recordingsModal) {
       this.recordingsModal.addEventListener("click", (e) => {
         if (e.target === this.recordingsModal) this.closeRecordingsModal();
@@ -785,7 +808,7 @@ class SmartClassroomStudentApp {
         `;
 
         card.addEventListener("click", () => {
-          this.playRecordedVideo(rec.videoUrl, `${subject.name} - ${rec.title}`);
+          this.playRecordedVideo(rec.videoUrl, `${subject.name} - ${rec.title}`, rec);
         });
 
         this.recordingsGrid.appendChild(card);
@@ -797,13 +820,129 @@ class SmartClassroomStudentApp {
     }
   }
 
-  playRecordedVideo(videoUrl, title) {
+  playRecordedVideo(videoUrl, title, recordingObj = null) {
     if (!this.videoPlayer || !this.playerContainer) return;
     this.playerContainer.style.display = "block";
     if (this.playingTitle) this.playingTitle.textContent = `▶ Now Playing: ${title}`;
     this.videoPlayer.src = videoUrl;
+
+    this.activeVideoCaptions = (recordingObj && recordingObj.captions && recordingObj.captions.length > 0)
+      ? recordingObj.captions
+      : [
+          { id: "c1", startTime: 0, endTime: 4, text: "Welcome to this recorded lecture session!" },
+          { id: "c2", startTime: 4, endTime: 10, text: "Today we will analyze key core computer science concepts and architectural design." },
+          { id: "c3", startTime: 10, endTime: 18, text: "Pay close attention to how algorithm efficiency optimizes execution speed." },
+          { id: "c4", startTime: 18, endTime: 26, text: "Let us trace the step-by-step vector diagram on the interactive whiteboard." },
+          { id: "c5", startTime: 26, endTime: 40, text: "Feel free to pause, rewind, or switch subtitle languages at any time!" }
+        ];
+
+    if (this.videoCaptionOverlay) this.videoCaptionOverlay.style.display = "none";
+    this.currentActiveSegId = null;
+
     this.videoPlayer.play().catch(e => console.log("Auto-play handling:", e));
-    this.logDebug("VIDEO", `Streaming recorded video: ${videoUrl}`);
+    this.logDebug("VIDEO", `Streaming recorded video with CC subtitles: ${videoUrl}`);
+  }
+
+  async updateVideoSubtitles(forceRedraw = false) {
+    if (!this.videoPlayer || !this.videoCaptionOverlay || !this.ytCaptionText) return;
+    const currentTime = this.videoPlayer.currentTime;
+
+    if (!this.activeVideoCaptions || this.activeVideoCaptions.length === 0) {
+      this.videoCaptionOverlay.style.display = "none";
+      return;
+    }
+
+    const activeSeg = this.activeVideoCaptions.find(c => currentTime >= c.startTime && currentTime <= c.endTime);
+
+    if (!activeSeg) {
+      this.videoCaptionOverlay.style.display = "none";
+      this.currentActiveSegId = null;
+      return;
+    }
+
+    if (this.currentActiveSegId === activeSeg.id && !forceRedraw) {
+      return;
+    }
+
+    this.currentActiveSegId = activeSeg.id;
+    this.videoCaptionOverlay.style.display = "inline-block";
+
+    const text = activeSeg.text || "";
+    if (this.activeSubLang === "en") {
+      this.ytCaptionText.textContent = text;
+      return;
+    }
+
+    const cacheKey = `${activeSeg.id}_${this.activeSubLang}`;
+    if (this.subTranslationCache.has(cacheKey)) {
+      this.ytCaptionText.textContent = this.subTranslationCache.get(cacheKey);
+      return;
+    }
+
+    this.ytCaptionText.textContent = text;
+    try {
+      const translated = await this.translateTextAsync(text, this.activeSubLang);
+      this.subTranslationCache.set(cacheKey, translated);
+      if (this.currentActiveSegId === activeSeg.id) {
+        this.ytCaptionText.textContent = translated;
+      }
+    } catch(e) {
+      console.log("Subtitle Translation Error:", e);
+    }
+  }
+
+  async translateTextAsync(text, targetLang) {
+    const dict = {
+      hi: {
+        "Welcome to this recorded lecture session!": "इस रिकॉर्ड किए गए व्याख्यान सत्र में आपका स्वागत है!",
+        "Today we will analyze key core computer science concepts and architectural design.": "आज हम मुख्य कंप्यूटर विज्ञान अवधारणाओं और वास्तुकला डिजाइन का विश्लेषण करेंगे।",
+        "Pay close attention to how algorithm efficiency optimizes execution speed.": "ध्यान दें कि कैसे एल्गोरिदम दक्षता निष्पादित गति को अनुकूलित करती है।",
+        "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "आइए इंटरएक्टिव व्हाइटबोर्ड पर चरण-दर-चरण वेक्टर आरेख का पता लगाएं।",
+        "Feel free to pause, rewind, or switch subtitle languages at any time!": "बेझिझक किसी भी समय सबटाइटल भाषाओं को रोकें, रिवाइंड करें या बदलें!"
+      },
+      es: {
+        "Welcome to this recorded lecture session!": "¡Bienvenido a esta sesión de conferencia grabada!",
+        "Today we will analyze key core computer science concepts and architectural design.": "Hoy analizaremos conceptos clave de ciencias de la computación y diseño arquitectónico.",
+        "Pay close attention to how algorithm efficiency optimizes execution speed.": "Preste mucha atención a cómo la eficiencia del algoritmo optimiza la velocidad de ejecución.",
+        "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "Trazemos el diagrama vectorial paso a paso en la pizarra interactiva.",
+        "Feel free to pause, rewind, or switch subtitle languages at any time!": "¡No dude en pausar, rebobinar o cambiar los idiomas de los subtítulos en cualquier momento!"
+      },
+      fr: {
+        "Welcome to this recorded lecture session!": "Bienvenue dans esta session de cours enregistrée !",
+        "Today we will analyze key core computer science concepts and architectural design.": "Aujourd'hui, nous analyserons les concepts clés de l'informatique et de la conception architecturale.",
+        "Pay close attention to how algorithm efficiency optimizes execution speed.": "Faites très attention à la manière dont l'efficacité de l'algorithme optimise la vitesse d'exécution.",
+        "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "Traçons le schéma vectoriel étape par étape sur le tableau blanc interactif.",
+        "Feel free to pause, rewind, or switch subtitle languages at any time!": "N'hésitez pas à faire una pause, à rembobiner ou a changer la langue des sous-titres !"
+      },
+      de: {
+        "Welcome to this recorded lecture session!": "Willkommen zu dieser aufgezeichneten Vorlesungssitzung!",
+        "Today we will analyze key core computer science concepts and architectural design.": "Heute werden wir Schlüsselkonzepte der Informatik und Architektur analysieren.",
+        "Pay close attention to how algorithm efficiency optimizes execution speed.": "Achten Sie genau darauf, wie Algorithmeneffizienz die Ausführungsgeschwindigkeit optimiert.",
+        "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "Lassen Sie uns das Vektordiagramm Schritt für Schritt auf dem Whiteboard verfolgen.",
+        "Feel free to pause, rewind, or switch subtitle languages at any time!": "Fühlen Sie sich frei, die Untertitelsprachen jederzeit zu pausieren oder zu wechseln!"
+      },
+      ja: {
+        "Welcome to this recorded lecture session!": "この録音された講義セッションへようこそ！",
+        "Today we will analyze key core computer science concepts and architectural design.": "本日は、コンピュータサイエンスのコアコンセプトと設計を分析します。",
+        "Pay close attention to how algorithm efficiency optimizes execution speed.": "アルゴリズムの効率が実行速度をどのように最適化するかに注目してください。",
+        "Let us trace the step-by-step vector diagram on the interactive whiteboard.": "ホワイトボードでステップバイステップのベクトル図を追跡してみましょう。",
+        "Feel free to pause, rewind, or switch subtitle languages at any time!": "いつでも字幕言語を一時停止、巻き戻し、または切り替えることができます。"
+      }
+    };
+
+    if (dict[targetLang] && dict[targetLang][text]) {
+      return dict[targetLang][text];
+    }
+
+    try {
+      const res = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${targetLang}`);
+      const data = await res.json();
+      if (data && data.responseData && data.responseData.translatedText) {
+        return data.responseData.translatedText;
+      }
+    } catch(e) {}
+
+    return text;
   }
 
   logDebug(tag, msg) {

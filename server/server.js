@@ -368,6 +368,15 @@ app.post('/api/upload-lecture', async (req, res) => {
     const recCount = targetSubject.recordings.length + 1;
     const formattedDate = new Date().toLocaleString('en-US', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+    // Timed Caption Segments (YouTube-style CC Subtitles)
+    const defaultCaptions = req.body.captions || [
+      { id: "c1", startTime: 0, endTime: 4, text: "Welcome to this recorded lecture session!" },
+      { id: "c2", startTime: 4, endTime: 10, text: "Today we will analyze key core computer science concepts and architectural design." },
+      { id: "c3", startTime: 10, endTime: 18, text: "Pay close attention to how algorithm efficiency optimizes execution speed." },
+      { id: "c4", startTime: 18, endTime: 26, text: "Let us trace the step-by-step vector diagram on the interactive whiteboard." },
+      { id: "c5", startTime: 26, endTime: 40, text: "Feel free to pause, rewind, or switch subtitle languages at any time!" }
+    ];
+
     // Append NEW recording entry (No overwriting!)
     const recordingEntry = {
       id: `rec-${Date.now()}`,
@@ -375,7 +384,8 @@ app.post('/api/upload-lecture', async (req, res) => {
       videoUrl: videoUrl,
       uploadMethod: uploadMethod,
       recordedAt: new Date().toISOString(),
-      formattedDate: formattedDate
+      formattedDate: formattedDate,
+      captions: defaultCaptions
     };
 
     targetSubject.recordings.push(recordingEntry);
