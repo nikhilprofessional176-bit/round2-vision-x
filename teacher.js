@@ -70,6 +70,14 @@ class TeacherControlPanel {
     this.newSubjectInput = document.getElementById("new-subject-input");
     this.createSubjectBtn = document.getElementById("create-subject-btn");
 
+    // Live Student Doubts DOM Elements & State
+    this.doubtsBtn = document.getElementById("teacher-doubts-btn");
+    this.doubtBadge = document.getElementById("doubt-badge");
+    this.doubtsModal = document.getElementById("teacher-doubts-modal");
+    this.closeDoubtsModalBtn = document.getElementById("close-teacher-doubts-modal-btn");
+    this.doubtsList = document.getElementById("teacher-doubts-list");
+    this.doubts = [];
+
     this.setupCanvas();
     this.bindEvents();
     this.initSpeechRecognition();
@@ -299,6 +307,25 @@ class TeacherControlPanel {
 
     if (this.createSubjectBtn) {
       this.createSubjectBtn.addEventListener("click", () => this.createNewSubjectClass());
+    }
+
+    // Live Student Doubts Modal Listeners
+    if (this.doubtsBtn) {
+      this.doubtsBtn.addEventListener("click", () => {
+        if (this.doubtsModal) this.doubtsModal.style.display = "flex";
+      });
+    }
+
+    if (this.closeDoubtsModalBtn && this.doubtsModal) {
+      this.closeDoubtsModalBtn.addEventListener("click", () => {
+        this.doubtsModal.style.display = "none";
+      });
+    }
+
+    if (this.doubtsModal) {
+      this.doubtsModal.addEventListener("click", (e) => {
+        if (e.target === this.doubtsModal) this.doubtsModal.style.display = "none";
+      });
     }
   }
 
@@ -608,12 +635,118 @@ class TeacherControlPanel {
       this.log("WebSocket connected. Teacher ready to stream.");
     };
 
+    this.ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "student_live_doubt") {
+          this.addStudentDoubt(data);
+        } else if (data.type === "teacher_resolve_doubt") {
+          const doubt = this.doubts.find(d => d.id === data.doubtId);
+          if (doubt) doubt.status = "resolved";
+          this.updateDoubtsUI();
+        }
+      } catch(e) {}
+    };
+
     this.ws.onclose = () => {
       this.statusEl.textContent = "⚠️ DISCONNECTED";
       this.statusEl.style.color = "#f43f5e";
       this.log("WebSocket disconnected. Retrying in 3s...");
       setTimeout(() => this.connectWebSocket(), 3000);
     };
+  }
+
+  addStudentDoubt(data) {
+    if (!data) return;
+    const existing = this.doubts.find(d => d.id === data.id);
+    if (!existing) {
+      this.doubts.unshift(data);
+    }
+    this.updateDoubtsUI();
+    this.playNotificationBeep();
+    this.log(`🔔 NEW LIVE DOUBT from ${data.studentName} (${data.studentRoll}): "${data.doubtText}"`);
+  }
+
+  updateDoubtsUI() {
+    if (!this.doubtsList) return;
+    const unread = this.doubts.filter(d => d.status !== "resolved");
+    
+    if (this.doubtBadge) {
+      if (unread.length > 0) {
+        this.doubtBadge.textContent = unread.length;
+        this.doubtBadge.style.display = "flex";
+      } else {
+        this.doubtBadge.style.display = "none";
+      }
+    }
+
+    if (this.doubts.length === 0) {
+      this.doubtsList.innerHTML = `
+        <div style="text-align: center; color: #94a3b8; padding: 30px; font-size: 0.88rem;">
+          🔔 No unread student doubts right now!
+        </div>
+      `;
+      return;
+    }
+
+    this.doubtsList.innerHTML = this.doubts.map(d => {
+      const isResolved = d.status === "resolved";
+      const timeStr = new Date(d.timestamp || Date.now()).toLocaleTimeString();
+      return `
+        <div style="background: ${isResolved ? 'rgba(255,255,255,0.02)' : 'rgba(245,158,11,0.08)'}; border: 1px solid ${isResolved ? 'rgba(255,255,255,0.1)' : 'rgba(245,158,11,0.3)'}; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 1.1rem;">👤</span>
+              <strong style="color: #fff; font-size: 0.9rem;">${d.studentName || 'Student'}</strong>
+              <span style="color: #94a3b8; font-size: 0.75rem; background: rgba(255,255,255,0.08); padding: 2px 6px; border-radius: 4px;">${d.studentRoll || 'CS-101'}</span>
+            </div>
+            <span style="font-size: 0.72rem; color: #94a3b8;">${timeStr}</span>
+          </div>
+
+          <div style="color: ${isResolved ? '#94a3b8' : '#f8fafc'}; font-size: 0.85rem; line-height: 1.4; word-break: break-word; text-decoration: ${isResolved ? 'line-through' : 'none'};">
+            💬 "${d.doubtText}"
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; margin-top: 4px;">
+            ${isResolved ? `
+              <span style="font-size: 0.75rem; color: #10b981; font-weight: 700;">✓ Resolved</span>
+            ` : `
+              <button onclick="window.teacherApp.resolveDoubt('${d.id}')" style="padding: 5px 12px; background: #10b981; color: #000; font-weight: 700; border: none; border-radius: 6px; font-size: 0.75rem; cursor: pointer;">✓ Mark Resolved</button>
+            `}
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  resolveDoubt(doubtId) {
+    const doubt = this.doubts.find(d => d.id === doubtId);
+    if (doubt) {
+      doubt.status = "resolved";
+    }
+    this.updateDoubtsUI();
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: "teacher_resolve_doubt",
+        sessionId: this.sessionId,
+        doubtId: doubtId
+      }));
+    }
+  }
+
+  playNotificationBeep() {
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.25);
+    } catch(e) {}
   }
 
   broadcastMessage(obj) {

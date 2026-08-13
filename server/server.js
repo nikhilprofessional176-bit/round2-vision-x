@@ -857,6 +857,45 @@ if (WebSocketServer) {
           return;
         }
 
+        // Handle Student Live Doubt Relay to Teacher
+        if (data.type === 'student_live_doubt') {
+          console.log(`[STUDENT DOUBT] Room [${sessionId}] from ${data.studentName || 'Student'} (${data.studentRoll}): ${data.doubtText}`);
+          const doubtPayload = {
+            type: 'student_live_doubt',
+            id: `dbt-${Date.now()}`,
+            sessionId: sessionId,
+            studentName: data.studentName || "Anonymous Student",
+            studentRoll: data.studentRoll || "CS-101",
+            doubtText: data.doubtText,
+            timestamp: Date.now(),
+            status: "unread"
+          };
+          state.eventBuffer.push(doubtPayload);
+          const doubtJson = JSON.stringify(doubtPayload);
+          state.teachers.forEach(t => {
+            if (t.readyState === 1) t.send(doubtJson);
+          });
+          ws.send(JSON.stringify({ type: 'doubt_sent_ack', doubtId: doubtPayload.id }));
+          return;
+        }
+
+        // Handle Teacher Resolve Doubt
+        if (data.type === 'teacher_resolve_doubt') {
+          const resolvePayload = {
+            type: 'teacher_resolve_doubt',
+            doubtId: data.doubtId,
+            sessionId: sessionId
+          };
+          const resolveJson = JSON.stringify(resolvePayload);
+          state.teachers.forEach(t => {
+            if (t.readyState === 1) t.send(resolveJson);
+          });
+          state.students.forEach(s => {
+            if (s.readyState === 1) s.send(resolveJson);
+          });
+          return;
+        }
+
         // Hot Path: Instant Broadcast to connected clients in the same session room
         let recipientCount = 0;
         const serialized = JSON.stringify(data);

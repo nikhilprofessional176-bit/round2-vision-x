@@ -229,6 +229,12 @@
       <span>👨‍🏫</span> Teacher Live Control Panel & Whiteboard
     </div>
     <div style="display: flex; align-items: center; gap: 12px;">
+      <!-- Live Student Doubts Bell Notification Button -->
+      <button id="teacher-doubts-btn" style="position: relative; background: rgba(245,158,11,0.15); border: 1px solid rgba(245,158,11,0.4); color: #f59e0b; padding: 6px 12px; border-radius: 8px; font-weight: 700; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 6px; transition: all 0.2s;" title="View Student Live Doubts">
+        <span style="font-size: 1.1rem;">🔔</span> Doubts
+        <span id="doubt-badge" style="background: #f43f5e; color: #fff; border-radius: 50%; width: 20px; height: 20px; font-size: 0.72rem; font-weight: 800; display: none; align-items: center; justify-content: center; box-shadow: 0 0 10px rgba(244,63,94,0.6);">0</span>
+      </button>
+
       <div id="recording-indicator" class="recording-badge" style="display: none;">
         <span class="rec-dot"></span> REC LIVE
       </div>
@@ -326,6 +332,30 @@
       <div class="panel-title" style="margin-top: 12px;">📜 Real-Time Broadcast Log</div>
       <div id="log-box" class="log-box">
         <div class="log-entry">[SYSTEM] Studio Deepgram Nova-2 & WebSpeech Dual-Engine Ready.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Teacher Live Student Doubts Modal -->
+  <div id="teacher-doubts-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(4, 6, 12, 0.85); backdrop-filter: blur(12px); z-index: 99999; align-items: center; justify-content: center;">
+    <div style="max-width: 580px; width: 92%; max-height: 85vh; padding: 24px; background: rgba(9, 13, 22, 0.98); backdrop-filter: blur(20px); border: 1px solid rgba(245, 158, 11, 0.4); border-radius: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.9), 0 0 30px rgba(245,158,11,0.25); display: flex; flex-direction: column; position: relative;">
+      
+      <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.6rem;">🔔</span>
+          <div>
+            <h3 style="color: #f59e0b; font-size: 1.2rem; font-weight: 800; margin: 0;">Live Student Doubts & Questions</h3>
+            <div style="font-size: 0.76rem; color: #94a3b8;">Real-time incoming student doubts for this lecture session</div>
+          </div>
+        </div>
+        <button id="close-teacher-doubts-modal-btn" style="background: rgba(255,255,255,0.1); border: none; color: #94a3b8; border-radius: 50%; width: 28px; height: 28px; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center;">✕</button>
+      </div>
+
+      <!-- Doubts Container -->
+      <div id="teacher-doubts-list" style="flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; max-height: 60vh;">
+        <div style="text-align: center; color: #94a3b8; padding: 30px; font-size: 0.88rem;">
+          🔔 No unread student doubts right now!
+        </div>
       </div>
     </div>
   </div>

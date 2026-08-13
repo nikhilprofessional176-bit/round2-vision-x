@@ -1,0 +1,19 @@
+[
+  {
+    "id": "std-001",
+    "name": "Demo Student",
+    "email": "student@gmail.com",
+    "password": "password123",
+    "rollNumber": "CS-101",
+    "studentCode": "csjmu"
+  },
+  {
+    "id": "std-1786593029442",
+    "name": "NIKHIL KUMAR",
+    "email": "nikhilprofessional176@gmail.com",
+    "password": "nikhil123",
+    "rollNumber": "CSJMA23001390090",
+    "studentCode": "csjmu",
+    "createdAt": "2026-08-13T03:50:29.442Z"
+  }
+]

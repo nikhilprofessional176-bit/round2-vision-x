@@ -96,6 +96,7 @@ class SmartClassroomStudentApp {
     this.currentStudent = null;
     this.checkStudentSession();
     this.setupAuthListeners();
+    this.setupAskTeacherDoubtListeners();
 
     // Recorded Lectures Modal DOM Cache
     this.recordingsBtn = document.getElementById("recordings-btn");
@@ -1451,6 +1452,61 @@ class SmartClassroomStudentApp {
     if (!this.authErrorMsg) return;
     this.authErrorMsg.textContent = msg;
     this.authErrorMsg.style.display = "block";
+  }
+
+  setupAskTeacherDoubtListeners() {
+    const askBtn = document.getElementById("ask-teacher-doubt-btn");
+    const modal = document.getElementById("ask-teacher-modal");
+    const closeBtn = document.getElementById("close-ask-teacher-modal-btn");
+    const form = document.getElementById("ask-teacher-form");
+    const nameEl = document.getElementById("student-doubt-sender-name");
+    const rollEl = document.getElementById("student-doubt-sender-roll");
+
+    if (askBtn) {
+      askBtn.addEventListener("click", () => {
+        if (nameEl) nameEl.textContent = this.currentStudent ? this.currentStudent.name : "Demo Student";
+        if (rollEl) rollEl.textContent = `(${this.currentStudent ? this.currentStudent.rollNumber : 'CS-101'})`;
+        if (modal) modal.style.display = "flex";
+      });
+    }
+
+    if (closeBtn && modal) {
+      closeBtn.addEventListener("click", () => modal.style.display = "none");
+    }
+
+    if (modal) {
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) modal.style.display = "none";
+      });
+    }
+
+    if (form) {
+      form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const input = document.getElementById("ask-teacher-input");
+        if (!input) return;
+        const doubtText = input.value.trim();
+        if (!doubtText) return;
+
+        const name = this.currentStudent ? this.currentStudent.name : "Demo Student";
+        const roll = this.currentStudent ? this.currentStudent.rollNumber : "CS-101";
+
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.send(JSON.stringify({
+            type: "student_live_doubt",
+            sessionId: this.currentSessionId || "cs101-recursion",
+            studentName: name,
+            studentRoll: roll,
+            doubtText: doubtText
+          }));
+        }
+
+        input.value = "";
+        if (modal) modal.style.display = "none";
+        alert("✅ Your doubt has been sent to the Professor in real-time!");
+        this.logDebug("DOUBT-SENT", `Doubt sent to Teacher: "${doubtText}"`);
+      });
+    }
   }
 
   logDebug(tag, msg) {
